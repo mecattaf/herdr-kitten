@@ -77,3 +77,9 @@ inter-phase adjudication moved from inside flows to wave boundaries (the point o
 - Ruling applied (mission escalation ladder): W1-W4 execute WARM in this session as the
   ultracode workflows they were authored as; flow files + `tally flow check` exit-0 receipts
   remain the adoption artifacts; the claude-window pool is not consumed by warm execution.
+
+### W2 boundary amendment (2026-09-01T21:36Z)
+- W2 lanes execute sequentially WARM on main (single executor; the parallel-worktree
+  shape had no remaining value once the flow substrate bounced — flow files
+  flow-a-w2.js/w3.js/w4.js remain check-passing adoption artifacts). File-domain
+  discipline preserved at commit granularity instead.
