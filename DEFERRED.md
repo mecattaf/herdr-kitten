@@ -68,3 +68,12 @@ inter-phase adjudication moved from inside flows to wave boundaries (the point o
 - FLOW-A PROBE NODE DELTA: the banked probe prompt FILES the four upstream asks on herdr's
   tracker; tonight that is HUMAN-ATTENDED (spec 12.2, mission law) -> docs/upstream.md holds
   ready-to-file drafts instead. The probe battery itself ran warm in W0, all PASS.
+
+### W1 boundary amendment (2026-09-01T20:35Z) — TALLY DEFECT, waves run warm
+- payload-hash-contract-drift kills every claude() flow node deterministically (2/2 runs,
+  identical hashes; sh nodes pass). Full repro + logs:
+  ~/SEPT1/receipts-herdr-kitten/tally-defects.md. NOT filed on mecattaf/tally.nix (repo
+  ownership wall); the defect file is the handoff.
+- Ruling applied (mission escalation ladder): W1-W4 execute WARM in this session as the
+  ultracode workflows they were authored as; flow files + `tally flow check` exit-0 receipts
+  remain the adoption artifacts; the claude-window pool is not consumed by warm execution.
