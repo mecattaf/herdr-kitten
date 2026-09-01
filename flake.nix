@@ -60,7 +60,7 @@
           # sandbox HOME (kitty-attended gates run on the executor's machine,
           # never here — spec D27/G18).
           herdr-kitten-smoke = pkgs.runCommand "herdr-kitten-smoke"
-            { src = ./.; nativeBuildInputs = [ pkgs.python3 herdrPkg ]; } ''
+            { src = ./.; nativeBuildInputs = [ pkgs.python3 pkgs.git herdrPkg ]; } ''
             cp -R --no-preserve=mode "$src" source
             cd source
             chmod +x bin/hk tests/smoke/*.sh install.sh
