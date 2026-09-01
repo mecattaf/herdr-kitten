@@ -83,3 +83,13 @@ inter-phase adjudication moved from inside flows to wave boundaries (the point o
   shape had no remaining value once the flow substrate bounced — flow files
   flow-a-w2.js/w3.js/w4.js remain check-passing adoption artifacts). File-domain
   discipline preserved at commit granularity instead.
+
+### W4 externalization (2026-09-01T23:05Z) — every remaining item now has a gh issue
+Issues filed on mecattaf/herdr-kitten (receipts: ~/SEPT1/receipts-herdr-kitten/issues-filed.md):
+- §1 fork-ledger -> #6 · §2 held decisions -> #1 (+#13 for the --spin remainder)
+- §3 consumer-territory rows -> #8 · §5 human-attended -> #1, #7
+- upstream asks -> #2 #3 #4 #5 · probe surprises -> #11 (recent* lag), #12 (done state)
+- D10 thin-client fork variant -> #9 · trampoline ergonomics -> #10
+- Index mapping issues<->ledger lines: #14 (linked from README limitations)
+- NOT externalized here by design: tally payload-hash drift (handoff file
+  tally-defects.md, tally.nix's domain); spec B dotfiles consumption; campaign C scope.
