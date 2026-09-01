@@ -113,6 +113,11 @@ Missing file = built-in defaults, nothing written. Keys: `plain_scrollback_actio
 
 ## Limitations
 
+Everything deferred by the initial build is filed and indexed:
+[the deferred-ledger index](https://github.com/mecattaf/herdr-kitten/issues/14)
+maps every open issue back to its ledger line.
+
+
 - **1000-line read cap**: `hk read` is server-capped at 1000 lines regardless of the ask
   (hk prints a notice; herdr does not). The uncapped path is the scrollback gesture.
   Upstream ask drafted.
