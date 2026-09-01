@@ -194,11 +194,51 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("config", help="print effective hk-config").set_defaults(func=verbs.cmd_config)
 
-    for verb in ("fork", "ssh", "voice", "notifyd"):
-        stub = sub.add_parser(verb, help=f"{verb} (stage S3-S5)")
-        stub.add_argument("rest", nargs=argparse.REMAINDER)
-        stub.set_defaults(func=_stub(verb))
+    p = sub.add_parser("ssh", help="remote tiers: herdr thin client or plain kitten ssh")
+    p.add_argument("--plain", action="store_true", help="pure kitten ssh, herdr-free")
+    p.add_argument("--in-place", action="store_true", help="exec in this window instead of launching one")
+    p.add_argument("sshhost")
+    p.set_defaults(func=_cmd_ssh)
+
+    p = sub.add_parser("voice", help="dictation endpoint: begin|text|end (exit 3 = fall back)")
+    voice_sub = p.add_subparsers(dest="voice_verb", required=True)
+    vb = voice_sub.add_parser("begin", help="recording spinner on")
+    vb.add_argument("--window", required=True)
+    vb.add_argument("--spin", action="store_true", help="frame-cycling (reserved, DECISION-2)")
+    vb.set_defaults(func=_cmd_voice)
+    vt = voice_sub.add_parser("text", help="stdin -> focused window's herdr pane")
+    vt.add_argument("--submit", action="store_true")
+    vt.set_defaults(func=_cmd_voice)
+    ve = voice_sub.add_parser("end", help="recording spinner off")
+    ve.add_argument("--window", required=True)
+    ve.set_defaults(func=_cmd_voice)
+
+    p = sub.add_parser("notifyd", help="the ONE event loop: notifications + user-var mirrors")
+    p.set_defaults(func=_cmd_notifyd)
+
+    stub = sub.add_parser("fork", help="fork is a kitten gesture (kitten hk.py fork); CLI alias TBD")
+    stub.add_argument("rest", nargs=argparse.REMAINDER)
+    stub.set_defaults(func=_stub("fork"))
     return parser
+
+
+def _cmd_ssh(args):
+    from hk import remote
+    return remote.cmd_ssh(args.sshhost, plain=args.plain, in_place=args.in_place)
+
+
+def _cmd_voice(args):
+    from hk import voice
+    if args.voice_verb == "begin":
+        return voice.cmd_begin(args.window, spin=args.spin)
+    if args.voice_verb == "end":
+        return voice.cmd_end(args.window)
+    return voice.cmd_text(submit=args.submit)
+
+
+def _cmd_notifyd(_args):
+    from hk import notifyd
+    return notifyd.main()
 
 
 def main(argv: list[str] | None = None) -> int:
