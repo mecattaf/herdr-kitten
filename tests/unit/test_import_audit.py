@@ -7,8 +7,10 @@ import sys
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent.parent
-ALLOWED_PREFIXES = ("hk",)          # local package
-KITTEN_ONLY_PREFIXES = ("kitty", "kittens")  # provided by kitty in-process
+ALLOWED_PREFIXES = ("hk", "kitten")  # local packages (repo tree)
+# kitty/kittens are provided by kitty in-process; ladder/fork_state are the
+# kitten's own modules, importable flat when installed to ~/.config/kitty/
+KITTEN_ONLY_PREFIXES = ("kitty", "kittens", "ladder", "fork_state")
 
 
 def _imports(path):

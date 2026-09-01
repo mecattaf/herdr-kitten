@@ -18,6 +18,9 @@ hk_sandbox() {
     XDG_DATA_HOME="$SBX/.data" XDG_CACHE_HOME="$SBX/.cache" \
     XDG_RUNTIME_DIR="$SBX/run" HERDR_SOCKET_PATH="$SBX/herdr.sock"
   mkdir -p "$SBX/.config" "$SBX/.state" "$SBX/.data" "$SBX/.cache" "$SBX/run"
+  # the headless battery is socket-half by definition: never let the developer's
+  # live kitty leak into a gate (G5 once stamped user-vars on a real window)
+  unset KITTY_WINDOW_ID KITTY_LISTEN_ON KITTY_PID 2>/dev/null || true
 }
 
 hk_server_start() {
@@ -36,3 +39,48 @@ hk_server_stop() {
   herdr server stop >/dev/null 2>&1 || kill "${HK_SERVER_PID:-0}" 2>/dev/null || true
   wait "${HK_SERVER_PID:-0}" 2>/dev/null || true
 }
+
+# Prepare the sandbox pane shell: bash reading a .bashrc that sources the
+# trampoline hook (spec D5). Call after hk_sandbox, before hk_server_start.
+hk_sandbox_shell() {
+  REPO_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+  export SHELL=$(command -v bash)
+  # One line, exactly the line the README asks a user to add to their shell rc.
+  # PS1 is deliberately NOT touched: herdr's own shell integration owns the prompt.
+  cat > "$SBX/.bashrc" <<RC
+. "$REPO_ROOT/assets/hk-trampoline.sh"
+RC
+  export PATH="$REPO_ROOT/bin:$PATH"
+}
+
+# wait (bounded, test-harness-only) until a condition command exits 0
+hk_wait() {
+  _tries=${2:-25}
+  while [ "$_tries" -gt 0 ]; do
+    eval "$1" && return 0
+    _tries=$((_tries - 1))
+    sleep 0.2
+  done
+  return 1
+}
+
+hk_pane_count() {
+  herdr pane list | python3 -c "import json,sys; print(len(json.load(sys.stdin)['result']['panes']))"
+}
+
+hk_json() { python3 -c "import json,sys;$1"; }
+
+# Reading a pane in a gate.
+#
+# Ground truth, executed live 2026-09-01 against herdr 0.8.2: `pane read
+# --source recent|recent-unwrapped --lines N` returns the last N RENDERED ROWS
+# counted from the bottom of the pane's row buffer, blank rows included — NOT
+# the last N non-empty lines. On a fresh 40-row pane whose output sits at the
+# top, `--lines 20` returns the bottom 20 rows, i.e. nothing. Ask for at least a
+# full viewport, or use the `visible` source, whenever a gate asserts on-screen
+# content. (`hk read` itself is recent-unwrapped by spec 6.1 and passes --lines
+# straight through; this is a harness concern, not a verb concern.)
+HK_READ_ROWS=200
+hk_pane_visible() { herdr pane read "$1" --source visible --lines "${2:-$HK_READ_ROWS}" --format text; }
+hk_pane_recent() { herdr pane read "$1" --source recent-unwrapped --lines "${2:-$HK_READ_ROWS}" --format text; }
+hk_wait_pane_shows() { hk_wait "hk_pane_visible $1 | grep -q -- '$2'" "${3:-25}"; }
