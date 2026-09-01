@@ -1,0 +1,13 @@
+# Example systemd user unit for hk notifyd (spec 8.8) — installed by NOBODY
+# automatically; copy to ~/.config/systemd/user/ yourself if you want it.
+[Unit]
+Description=hk notifyd - herdr agent-state surfacing (one event loop)
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/hk notifyd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

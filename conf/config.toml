@@ -1,0 +1,15 @@
+# hk-config — the ONE repo config file (spec F.4).
+# Location: $XDG_CONFIG_HOME/hk/config.toml (read with tomllib; every key optional —
+# every verb runs on these built-in defaults when the file is absent, spec 1.4).
+
+# Action for the scrollback gesture on a PLAIN kitty window (spec D12).
+# The herdr lane is not configurable: a herdr window always forwards \x02e.
+# Default: kitty's built-in show_scrollback. Point this at kitty-scrollback.nvim
+# or any kitty remote-control action if you use one.
+#plain_scrollback_action = "show_scrollback"
+
+# Command notifyd runs on agent blocked/done transitions (spec D26).
+# Provisioning a notification daemon is your problem, not hk's.
+#notify_command = "notify-send"
+
+# Host prefix for `hk --host` invocations is per-invocation, not config.

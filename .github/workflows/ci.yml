@@ -1,0 +1,12 @@
+# One gate (spec D27, 12.4): build + smoke via `nix flake check`. Nothing else.
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  flake-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - run: nix flake check -L

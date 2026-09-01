@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""hk — the herdr-kitten CLI. Every verb is a socket/CLI join, never a scheduler.
+
+Stdlib-only (spec D1). Exit codes (spec D9 + census exit conventions):
+  0 delivered/ok, 1 herdr error, 2 usage, 3 not-a-herdr-window (voice), 4 not implemented yet.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import socket
+import subprocess
+import sys
+
+# bin/hk is installed beside the hk/ package (repo layout and install.sh both
+# guarantee ../hk relative to the resolved script path).
+_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from hk import VERSION  # noqa: E402
+from hk import predicate  # noqa: E402
+
+EXIT_OK = 0
+EXIT_HERDR_ERROR = 1
+EXIT_USAGE = 2
+EXIT_NOT_HERDR_WINDOW = 3
+EXIT_NOT_IMPLEMENTED = 4
+
+# Verbs land by stage (spec S2-S5); a stub exits 4 loudly, never silently.
+_STUB_VERBS = [
+    "open", "new", "run", "send", "read", "rename", "resume", "focus",
+    "ws", "materialise", "dematerialise", "fork", "ssh", "voice",
+    "notifyd", "agent", "config",
+]
+
+
+def herdr_socket_path() -> str:
+    """The herdr socket this environment would talk to (census: session.rs)."""
+    override = os.environ.get("HERDR_SOCKET_PATH")
+    if override:
+        return override
+    config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(config_home, "herdr", "herdr.sock")
+
+
+def _cmd_version(_args: argparse.Namespace) -> int:
+    print(f"hk {VERSION}")
+    return EXIT_OK
+
+
+def _probe_socket(path: str) -> str:
+    if not os.path.exists(path):
+        return "absent"
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(2.0)
+    try:
+        s.connect(path)
+        return "reachable"
+    except OSError as exc:
+        return f"unreachable ({exc})"
+    finally:
+        s.close()
+
+
+def _tool_version(argv: list[str]) -> str:
+    try:
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+        return (out.stdout or out.stderr).strip().splitlines()[0] if (out.stdout or out.stderr) else "unknown"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"not found ({exc.__class__.__name__})"
+
+
+def _cmd_doctor(_args: argparse.Namespace) -> int:
+    """spec 1.5: kitty version, herdr version+protocol, socket, predicate."""
+    print(f"hk: {VERSION}")
+    print(f"kitty: {_tool_version(['kitty', '--version'])}")
+    print(f"herdr: {_tool_version(['herdr', '--version'])}")
+    sock = herdr_socket_path()
+    print(f"socket: {sock} [{_probe_socket(sock)}]")
+    win_id = os.environ.get("KITTY_WINDOW_ID")
+    listen_on = os.environ.get("KITTY_LISTEN_ON")
+    if win_id and listen_on:
+        try:
+            out = subprocess.run(
+                ["kitty", "@", "--to", listen_on, "ls"],
+                capture_output=True, text=True, timeout=10,
+            )
+            verdict = "unknown"
+            if out.returncode == 0:
+                for os_window in json.loads(out.stdout):
+                    for tab in os_window.get("tabs", []):
+                        for window in tab.get("windows", []):
+                            if str(window.get("id")) == win_id:
+                                verdict = str(predicate.is_herdr_client(window))
+            print(f"predicate (window {win_id}): {verdict}")
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            print(f"predicate (window {win_id}): unknown ({exc.__class__.__name__})")
+    else:
+        print("predicate: not inside a kitty window (KITTY_WINDOW_ID/KITTY_LISTEN_ON unset)")
+    return EXIT_OK
+
+
+def _stub(verb: str):
+    def _run(_args: argparse.Namespace) -> int:
+        print(f"hk {verb}: not implemented yet (lands in stages S2-S5)", file=sys.stderr)
+        return EXIT_NOT_IMPLEMENTED
+    return _run
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="hk",
+        description="herdr IS the kitty kitten: the CLI half.",
+    )
+    parser.add_argument("--version", action="store_true", help="print version and exit")
+    sub = parser.add_subparsers(dest="verb")
+    doctor = sub.add_parser("doctor", help="report versions, socket reachability, predicate")
+    doctor.set_defaults(func=_cmd_doctor)
+    for verb in _STUB_VERBS:
+        stub = sub.add_parser(verb, help=f"{verb} (stage S2-S5)")
+        stub.add_argument("rest", nargs=argparse.REMAINDER)
+        stub.set_defaults(func=_stub(verb))
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if args.version:
+        return _cmd_version(args)
+    if not getattr(args, "func", None):
+        build_parser().print_help()
+        return EXIT_USAGE
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

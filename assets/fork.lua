@@ -1,0 +1,10 @@
+-- fork.lua — the nvim side of slash-fork (spec R11, D11, D24; filled in stage S3).
+-- Contract (binding on the S3 implementation):
+--   * BufWritePost and VimLeavePre are the ONLY delivery decision points (the fork gate).
+--   * first :w delivers the whole buffer via `hk send` (bracketed, populate-only);
+--   * an append-only save delivers only the appended suffix;
+--   * a save editing inside delivered text delivers nothing and raises a notification;
+--   * :q! or crash delivers nothing;
+--   * NEVER read the target pane (spec F.8) — the buffer starts blank by doctrine.
+-- Target pane id arrives via $HK_FORK_PANE (threaded explicitly: launched kitty
+-- windows inherit no HERDR_* env, census-map P69).
