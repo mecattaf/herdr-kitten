@@ -76,9 +76,8 @@ class Notifyd:
         win, sock = tokens.get("kitty_win"), tokens.get("kitty_sock")
         if not win or not sock:
             return
-        subprocess.run(["kitty", "@", "--to", sock, "set-user-vars",
-                        "--match", f"id:{win}", f"{key}={value}"],
-                       capture_output=True)
+        from hk import kittyc
+        kittyc.set_user_vars_at(sock, win, **{key: value})
 
     # ---- event handling ----------------------------------------------------
     def handle(self, envelope: dict) -> bool:

@@ -37,35 +37,3 @@ def cmd_ssh(host: str, plain: bool = False, in_place: bool = False) -> int:
     except kittyc.KittyError as exc:
         print(f"hk ssh: {exc}", file=sys.stderr)
         return EXIT_ERROR
-
-
-def niri_move_materialised(window_ids: list[str]) -> int:
-    """spec 9.7 (D15): NIRI_SOCKET present -> move the given kitty windows to
-    the focused niri workspace; absent -> ZERO compositor calls (unit-tested
-    by asserting this function is the only niri call site and returns 0
-    immediately when the env var is unset)."""
-    if not os.environ.get("NIRI_SOCKET"):
-        return 0
-    import json
-    import subprocess
-    focused = None
-    try:
-        out = subprocess.run(["niri", "msg", "-j", "workspaces"],
-                             capture_output=True, text=True, timeout=10)
-        for ws in json.loads(out.stdout):
-            if ws.get("is_focused"):
-                focused = ws.get("idx")
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        return 0
-    if focused is None:
-        return 0
-    moved = 0
-    for _win in window_ids:
-        # kitty window id -> wayland window: niri matches by focus history;
-        # the adapter moves the MOST RECENT window per materialise launch.
-        proc = subprocess.run(["niri", "msg", "action",
-                               "move-window-to-workspace", str(focused)],
-                              capture_output=True, timeout=10)
-        if proc.returncode == 0:
-            moved += 1
-    return moved

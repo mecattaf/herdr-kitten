@@ -110,3 +110,12 @@ def launch_os_window(cmd: list[str], user_vars: dict[str, str] | None = None,
         args += [f"--os-window-class={window_class}"]
     args += ["--", *cmd]
     return _run(args).stdout.strip()
+
+
+def set_user_vars_at(sock: str, win_id: str, **vars_: str) -> None:
+    """set-user-vars against an EXPLICIT kitty socket (notifyd resolves the
+    socket from herdr-side kitty_sock tokens, not from its own env)."""
+    import subprocess
+    args = ["kitty", "@", "--to", sock, "set-user-vars", "--match", f"id:{win_id}"]
+    args += [f"{key}={value}" for key, value in vars_.items()]
+    subprocess.run(args, capture_output=True)
