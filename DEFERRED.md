@@ -46,3 +46,25 @@ inter-phase adjudication moved from inside flows to wave boundaries (the point o
 
 ## 7. Wave-boundary additions
 (appended at the wave boundary where each item surfaces)
+
+### W0 boundary (2026-09-01T20:20Z)
+- PROBE SURPRISES (binding; full detail in docs/probe-report.md "Surprises"):
+  (1) pane.agent_status_changed subscription REQUIRES pane_id (per-pane); one request line
+  per connection -> notifyd reconnects on pane-set change (still one events.subscribe call
+  site) or rides pane.updated; S4 lane decides against the captured envelope.
+  (2) report-agent --state has no `done` -> G8/G6 fixtures drive `blocked` only.
+  (3) read cap observed as 999 lines on a 5000 request -> gates assert <=1000, not ==1000.
+  (4) herdr emits no truncation notice -> the cap notice is hk's obligation (spec 6.1).
+- ORCHESTRATION ADAPTATION: this session has no Workflow/Agent-spawn tool; W0's two warm
+  lanes ran sequentially in-session (probes first — front-loaded G2 risk). W1-W4 fan-out
+  comes from the tally flow runtime. Not a blocker; a substrate fact.
+- W1 RE-CUT DEVIATIONS from banked flow-a (file: herdr-kitten-flow/waves/flow-a-w1.js):
+  wave-boundary split (only waveOne executes; flow ends at merge-wave-1 synthesis point);
+  maxNodes 20->8, iterationCap 12->6 (4 planned nodes + repair headroom); kitten-lane
+  "sibling is writing the predicate concurrently" corrected to "predicate EXISTS from W0";
+  CONTEXT gained two sentences (probe-report-wins rule; herdr binary path for smoke runs);
+  core-cli file-domain clarified (trampoline hook in assets/ is core-cli's; fork.lua and
+  kitty-maps.conf are kitten lane's).
+- FLOW-A PROBE NODE DELTA: the banked probe prompt FILES the four upstream asks on herdr's
+  tracker; tonight that is HUMAN-ATTENDED (spec 12.2, mission law) -> docs/upstream.md holds
+  ready-to-file drafts instead. The probe battery itself ran warm in W0, all PASS.
