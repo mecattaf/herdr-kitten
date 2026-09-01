@@ -20,8 +20,11 @@ cp "$HERE/bin/hk" "$SHARE_DIR/bin/hk"
 chmod +x "$SHARE_DIR/bin/hk"
 ln -sf "$SHARE_DIR/bin/hk" "$BIN_DIR/hk"
 
-# kitten + assets into the kitty config dir (kitty loads kittens from there)
+# kitten + assets into the kitty config dir (kitty loads kittens from there);
+# ladder.py + fork_state.py install flat beside hk.py (its import fallback)
 cp "$HERE/kitten/hk.py" "$KITTY_DIR/hk.py"
+cp "$HERE/kitten/ladder.py" "$KITTY_DIR/ladder.py"
+cp "$HERE/kitten/fork_state.py" "$KITTY_DIR/fork_state.py"
 mkdir -p "$KITTY_DIR/hk-assets"
 cp -R "$HERE/assets/." "$KITTY_DIR/hk-assets/"
 
