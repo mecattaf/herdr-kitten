@@ -3,7 +3,7 @@
 ## Completion oracle (registered up front)
 | oracle | target | actual |
 |---|---|---|
-| G1-G18 gates | each PASS or SKIP-with-reason | **18/18 PASS** (G-ssh extra gate: typed SKIP by design) — docs/acceptance-run.md |
+| G1-G18 gates | each PASS or SKIP-with-reason | **18/18 PASS** (G-ssh extra gate: typed SKIP by design) — docs/dev/acceptance-run.md |
 | `nix flake check` | green | **green x4** (W0 first-try, W1, W2, final W3) |
 | repo pushed | private, github.com/mecattaf/herdr-kitten | **done** (PRIVATE, main) |
 | issues filed (W4) | ~10-25, labeled, receipted | **14** (6 labels; index #14; receipts banked) |

@@ -42,7 +42,7 @@ Every mechanical row of the 79-point kitty<->herdr integration census ships as a
 gesture, or documented native path — the full table is in
 [`docs/mapping.md`](docs/mapping.md), including what is deliberately out of scope and why.
 The acceptance battery (18 gates, headless subset in CI against a live herdr server) is
-committed as `docs/acceptance-run.md`.
+committed as `docs/dev/acceptance-run.md`.
 
 ## Install
 
