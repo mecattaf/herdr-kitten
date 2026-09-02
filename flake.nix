@@ -46,7 +46,16 @@
         in {
           # D27 half 1: artifacts compile, imports are stdlib-only, units pass.
           herdr-kitten-build = pkgs.runCommand "herdr-kitten-build"
-            { src = ./.; nativeBuildInputs = [ pkgs.python3 ]; } ''
+            {
+              src = ./.;
+              # kitty is a TEST dependency, not a runtime one: tests/unit/
+              # test_kitten.py drives kitten/hk.py through the real
+              # kittens.runner loader. Without it that gate would SKIP, and a
+              # skipped loader gate is exactly how BUG-1/BUG-2 shipped, so
+              # HK_REQUIRE_KITTY=1 below turns a missing kitty into a failure.
+              nativeBuildInputs = [ pkgs.python3 pkgs.kitty ];
+              HK_REQUIRE_KITTY = "1";
+            } ''
             cp -R --no-preserve=mode "$src" source
             cd source
             python3 -m py_compile bin/hk kitten/hk.py hk/*.py

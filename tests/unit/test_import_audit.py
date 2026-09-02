@@ -30,7 +30,10 @@ def _sources():
     for p in (REPO / "kitten").rglob("*.py"):
         yield p, True
     for p in (REPO / "tests").rglob("*.py"):
-        yield p, False
+        # kitten_loader_probe.py runs INSIDE kitty (`kitty +launch`) to drive
+        # the real kitten loader, so it is kitten-side for audit purposes even
+        # though it lives under tests/.
+        yield p, p.name == "kitten_loader_probe.py"
 
 
 class ImportAuditTest(unittest.TestCase):
