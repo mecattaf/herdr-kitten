@@ -17,7 +17,7 @@ Binary: herdr 0.8.2 store path (wire protocol 21), build receipts 02/04/05 in th
 | P-EXTRA blocked refusal | PASS | `pane report-agent --source test:probe --agent fake --state blocked` then `agent prompt` -> exit 1, stderr `{"error":{"code":"agent_blocked",...}}`. Receipt 09. |
 | P-EXTRA events envelope | PASS | Raw NDJSON `events.subscribe` on the socket; captured a REAL envelope: `{"data":{"agent":"fake","agent_status":"working","pane_id":"w1:p2","workspace_id":"w1"},"event":"pane.agent_status_changed"}` preceded by `{"id":"probe:events","result":{"type":"subscription_started"}}`. Receipt 08. notifyd builds against THIS capture. |
 
-## Surprises (fold into designs; also appended to DEFERRED.md)
+## Surprises (fold into designs; also appended to docs/dev/DEFERRED.md)
 
 1. `pane.agent_status_changed` subscriptions are PER-PANE: the Subscription variant REQUIRES
    `pane_id` (schema `request.$defs.Subscription`; live server rejects the bare form with

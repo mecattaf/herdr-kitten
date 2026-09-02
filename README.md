@@ -141,8 +141,12 @@ kitty >= 0.47.1 · herdr >= 0.8.2 (wire protocol 21) · Python >= 3.11 · nvim (
 
 - [`docs/mapping.md`](docs/mapping.md) — all 79 census points of the kitty<->herdr
   integration, each with its repo disposition.
-- [`docs/acceptance-run.md`](docs/acceptance-run.md) — the G1-G18 gate battery results.
+- [`docs/dev/acceptance-run.md`](docs/dev/acceptance-run.md) — the G1-G18 gate battery results.
 - [`docs/probe-report.md`](docs/probe-report.md) — the ground-truth probes this design
   was corrected against.
 - [`docs/fork-ledger.md`](docs/fork-ledger.md) / [`docs/upstream.md`](docs/upstream.md) —
   what needs herdr itself to change, reserved, with ready-to-file asks.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Copyright (c) 2026 Thomas Mecattaf.

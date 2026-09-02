@@ -7,7 +7,7 @@ zero repo code; *plain-tier* points live on kitty windows herdr never touches;
 *out-of-scope* rows name their reason and stay visible instead of vanishing.
 
 Verb = `hk <verb>` (the CLI). Gesture = `kitten hk.py <gesture>` (the kitten).
-Gates G1-G18 are the acceptance battery in `tests/smoke/` + `docs/acceptance-run.md`.
+Gates G1-G18 are the acceptance battery in `tests/smoke/` + `docs/dev/acceptance-run.md`.
 
 ## A — Identity and join keys
 

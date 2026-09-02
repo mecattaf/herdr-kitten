@@ -34,7 +34,11 @@
               ln -s $out/share/hk/bin/hk $out/bin/hk
               runHook postInstall
             '';
-            meta.mainProgram = "hk";
+            meta = {
+              description = "herdr IS the kitty kitten: one Python kitten + one stdlib CLI";
+              license = lib.licenses.mit;   # see ./LICENSE
+              mainProgram = "hk";
+            };
           };
           default = herdr-kitten;
         });
