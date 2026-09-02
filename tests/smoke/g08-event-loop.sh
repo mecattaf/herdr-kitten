@@ -11,10 +11,25 @@ NOTIFYD_PID=""
 trap 'kill $NOTIFYD_PID 2>/dev/null; hk_server_stop' EXIT
 herdr workspace create --cwd "$SBX" >/dev/null
 pane=$(herdr pane list | hk_json "d=json.load(sys.stdin);print(d['result']['panes'][0]['pane_id'])")
-# hk-config with a touch-file notify command
+# hk-config with a notify command that records the firing.
+#
+# It MUST ignore its argument. notifyd appends the notification message as a
+# final argv element (hk/notifyd.py run_notify), so a bare `touch $SBX/hit`
+# becomes `touch $SBX/hit "herdr: fake blocked"` and touch dutifully creates a
+# second file named `herdr: fake blocked` IN NOTIFYD'S CWD — the repo root.
+# That is exactly how the tracked junk file of BUG-13 was born, and it came
+# back the moment the battery ran again. A wrapper script that drops "$@" ends
+# the whole class.
 mkdir -p "$XDG_CONFIG_HOME/hk"
+cat > "$SBX/notify.sh" <<'SH'
+#!/bin/sh
+# the message arrives as "$@" and is deliberately discarded
+: > "$HK_HIT"
+SH
+chmod +x "$SBX/notify.sh"
+export HK_HIT="$SBX/hit"
 cat > "$XDG_CONFIG_HOME/hk/config.toml" <<TOML
-notify_command = "touch $SBX/hit"
+notify_command = "sh $SBX/notify.sh"
 TOML
 hk notifyd >"$SBX/notifyd.log" 2>&1 &
 NOTIFYD_PID=$!
