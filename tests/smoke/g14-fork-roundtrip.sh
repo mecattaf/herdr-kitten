@@ -24,10 +24,16 @@ nvim --headless --cmd "luafile $REPO_ROOT/assets/fork.lua" \
   || gate_fail G14 "nvim run1 failed: $(cat "$SBX/g14-run1.err")"
 hk_wait_pane_shows "$pane" 'para three' 50 || gate_fail G14 "deliveries never arrived"
 out=$(hk_pane_visible "$pane")
-echo "$out" | grep -q '\^\[\[200~para one' || gate_fail G14 "first save not bracketed-whole: $out"
-echo "$out" | grep -q '\^\[\[201~' || gate_fail G14 "close bracket never delivered: $out"
-echo "$out" | grep -q '\^\[\[200~para three' || gate_fail G14 "suffix save not delivered alone: $out"
-count=$(echo "$out" | grep -c '200~para one')
+# round2-04: framing is herdr's, and it is runtime-aware, so a `cat -v` pane
+# receives clean text. The assertions are about WHAT was delivered and HOW MANY
+# TIMES, which is what the gate was really protecting.
+echo "$out" | grep -q '^para one$' || gate_fail G14 "first save did not deliver the whole buffer: $out"
+echo "$out" | grep -q '^para two$' || gate_fail G14 "first save truncated: $out"
+echo "$out" | grep -q '^para three$' || gate_fail G14 "suffix save not delivered: $out"
+if echo "$out" | grep -q '\^\[\[20[01]~'; then
+  gate_fail G14 "hand-framed escapes leaked into a plain program (BUG-8): $out"
+fi
+count=$(echo "$out" | grep -c '^para one$')
 [ "$count" -eq 1 ] || gate_fail G14 "para one delivered $count times (suffix save leaked the whole buffer)"
 
 # run 2: :q! with text delivers NOTHING
@@ -37,4 +43,4 @@ sleep 1
 if hk_pane_visible "$pane" | grep -q 'ghost text'; then
   gate_fail G14 ":q! delivered bytes"
 fi
-gate_pass G14 "whole-buffer then suffix-only, both bracketed; :q! delivered nothing"
+gate_pass G14 "whole-buffer then suffix-only, no escape junk typed, :q! delivered nothing"

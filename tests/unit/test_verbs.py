@@ -9,7 +9,10 @@ import os
 import re
 import subprocess
 import unittest
+from pathlib import Path
 import unittest.mock
+
+REPO = Path(__file__).resolve().parent.parent.parent
 
 from hk import herdrc, verbs
 
@@ -35,21 +38,44 @@ class TrampolineTest(unittest.TestCase):
 
 
 class FramingTest(unittest.TestCase):
-    """spec 4.1 / F.14: bracketing is manual and nothing is auto-submitted."""
+    """spec 4.1 / F.14: nothing is auto-submitted, and hk no longer frames.
 
-    def test_bracketed(self):
-        framed = verbs._frame("two\nlines")
-        self.assertTrue(framed.startswith("\x1b[200~"))
-        self.assertTrue(framed.endswith("\x1b[201~"))
+    Framing moved to herdr (`pane.send_input`) in round2-04 — hand-framing was
+    BUG-8: into a program with no bracketed paste it typed literal ^[[200~.
+    What hk still owns is the never-submit guarantee, which now means scrubbing
+    a payload that tries to close the bracket itself.
+    """
 
-    def test_no_trailing_submission(self):
+    def test_hk_no_longer_hand_frames(self):
+        self.assertFalse(hasattr(verbs, "_frame"),
+                         "hand-framing is herdr's job now (BUG-8)")
+        for path in ("hk/verbs.py", "hk/voice.py"):
+            src = (REPO / path).read_text()
+            self.assertNotIn("\\x1b[200~", src,
+                             f"{path} builds a paste frame by hand (BUG-8)")
+
+    def test_exactly_one_file_owns_the_frame_constants(self):
+        owners = sorted(p.name for p in (REPO / "hk").glob("*.py")
+                        if "200~" in p.read_text())
+        self.assertEqual(owners, ["herdrc.py"],
+                         "the paste-frame bytes must live in one place")
+
+    def test_argv_tier_still_frames_because_it_must(self):
+        # Over ssh there is no socket, so the payload rides argv and hk has to
+        # frame it itself; that tier is documented as the lesser one.
+        sent = {}
+        original = herdrc.call
+        herdrc.call = lambda args, host=None: sent.update(args=args, host=host)
+        try:
+            herdrc.pane_send_input("w1:p1", "two\nlines", host="buildbox")
+        finally:
+            herdrc.call = original
+        payload = sent["args"][-1]
+        self.assertTrue(payload.startswith("\x1b[200~"))
+        self.assertTrue(payload.endswith("\x1b[201~"))
+        self.assertEqual(payload[len("\x1b[200~"):-len("\x1b[201~")], "two\nlines")
         # nothing whatsoever follows the close bracket — no \r, no \n
-        self.assertEqual(verbs._frame("hi").rsplit("\x1b[201~", 1)[1], "")
-
-    def test_payload_is_byte_exact(self):
-        payload = "line1\nline2\twith tab"
-        framed = verbs._frame(payload)
-        self.assertEqual(framed[len("\x1b[200~"):-len("\x1b[201~")], payload)
+        self.assertEqual(payload.rsplit("\x1b[201~", 1)[1], "")
 
 
 class PluginOwnedTest(unittest.TestCase):
@@ -118,11 +144,11 @@ class HostRoutingTest(unittest.TestCase):
 
     def test_host_argv_quotes_the_payload(self):
         # a bracketed send-text payload must survive the remote shell intact
-        argv = herdrc._argv(["pane", "send-text", "w1:p1", verbs._frame("a b; rm -rf /")],
-                            "buildbox")
+        framed = f"\x1b[200~a b; rm -rf /\x1b[201~"
+        argv = herdrc._argv(["pane", "send-text", "w1:p1", framed], "buildbox")
         import shlex
         self.assertEqual(shlex.split(argv[2]),
-                         ["herdr", "pane", "send-text", "w1:p1", verbs._frame("a b; rm -rf /")])
+                         ["herdr", "pane", "send-text", "w1:p1", framed])
 
 
 class ReadCapTest(unittest.TestCase):

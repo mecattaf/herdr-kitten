@@ -12,7 +12,7 @@ import os
 import subprocess
 import sys
 
-from hk import herdrc, kittyc, predicate
+from hk import herdrc, kittyc, predicate, verbs
 
 EXIT_OK = 0
 EXIT_HERDR_ERROR = 1
@@ -66,13 +66,27 @@ def cmd_text(submit: bool = False) -> int:
         print("hk voice text: focused window is not a herdr client (fall back to injection)",
               file=sys.stderr)
         return EXIT_NOT_HERDR_WINDOW
-    text = sys.stdin.read()
+    try:
+        text = verbs.read_payload()
+    except verbs.PayloadError as exc:
+        print(f"hk voice text: {exc}", file=sys.stderr)
+        return EXIT_HERDR_ERROR
     try:
         if submit:
             herdrc.agent_prompt(pane, text)
         else:
-            herdrc.pane_send_text(pane, f"\x1b[200~{text}\x1b[201~")
+            # ONE framing implementation for the whole repo. voice used to
+            # carry its own copy of the paste-frame constants and inherited
+            # every bug the send path had; now both ride herdrc._deliver.
+            clean, removed = herdrc.sanitise_framed(text)
+            if removed:
+                print(f"hk voice text: removed {removed} bracketed-paste "
+                      f"terminator{'s' if removed > 1 else ''} from the "
+                      f"dictated text", file=sys.stderr)
+            herdrc.pane_send_input(pane, clean)
         return EXIT_OK
     except herdrc.HerdrError as exc:
-        print(str(exc), file=sys.stderr)
+        code = getattr(exc, "code", "") or ""
+        prefix = f"{code}: " if code and code != "herdr_error" else ""
+        print(f"{prefix}{exc}", file=sys.stderr)
         return EXIT_HERDR_ERROR

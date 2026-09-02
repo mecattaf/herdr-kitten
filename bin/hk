@@ -142,8 +142,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("argv", nargs=argparse.REMAINDER)
     p.set_defaults(func=verbs.cmd_run)
 
-    p = sub.add_parser("send", help="stdin -> pane, bracketed populate-only")
+    p = sub.add_parser("send", help="stdin -> pane, populate-only (never submits)")
     p.add_argument("--submit", action="store_true", help="route through agent prompt")
+    p.add_argument("--raw", action="store_true",
+                   help="literal bytes, no bracketed-paste framing and no "
+                        "terminator scrubbing. Byte-transparent, and sharp: a "
+                        "payload can end the paste bracket and be typed as "
+                        "input, newlines included.")
     p.add_argument("pane")
     p.set_defaults(func=verbs.cmd_send)
 
