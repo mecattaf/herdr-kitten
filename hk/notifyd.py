@@ -34,12 +34,10 @@ BACKOFF_START = 0.5
 BACKOFF_MAX = 15.0
 
 
-def socket_path() -> str:
-    override = os.environ.get("HERDR_SOCKET_PATH")
-    if override:
-        return override
-    config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(config_home, "herdr", "herdr.sock")
+# The socket path now lives in herdrc alongside the rest of the socket
+# transport (round2-04); re-exported here so this module's callers and tests
+# keep their existing name.
+socket_path = herdrc.socket_path
 
 
 def subscriptions(pane_ids: list[str]) -> list[dict]:

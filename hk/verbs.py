@@ -34,8 +34,19 @@ def _err(message: str) -> None:
 
 
 def _herdr_fail(exc: herdrc.HerdrError) -> int:
-    # propagate the server error verbatim (spec 4.2: refusal is a real signal)
-    print(str(exc), file=sys.stderr)
+    """Propagate the server error verbatim (spec 4.2: refusal is a real signal).
+
+    The CODE is the machine-readable half of the contract — callers (tally
+    among them) branch on `agent_blocked`, `agent_prompt_stalled`, `timeout`.
+    The CLI transport used to leak it for free because it dumped herdr's whole
+    JSON envelope to stderr; the socket transport returns message and code
+    separately, so the code is printed explicitly rather than lost.
+    """
+    code = getattr(exc, "code", "") or ""
+    if code and code != "herdr_error":
+        print(f"{code}: {exc}", file=sys.stderr)
+    else:
+        print(str(exc), file=sys.stderr)
     return EXIT_HERDR_ERROR
 
 
@@ -179,19 +190,72 @@ def cmd_run(args) -> int:
         return _herdr_fail(exc)
 
 
-def _frame(text: str) -> str:
-    return f"\x1b[200~{text}\x1b[201~"
+def read_payload(stream=None) -> str:
+    """Read the payload from stdin, or raise a typed error.
+
+    STANDING RULE (converged on independently by this repo and by tally's
+    `--message-file -`): the payload is ALWAYS on stdin, never argv. Three
+    inputs used to produce raw Python tracebacks here — an over-long payload,
+    a NUL byte, and non-UTF-8 bytes. A traceback is never an acceptable answer
+    to user input, so all three become one typed line.
+    """
+    stream = stream if stream is not None else sys.stdin
+    try:
+        text = stream.read()
+    except UnicodeDecodeError as exc:
+        raise PayloadError(
+            "stdin is not valid UTF-8 "
+            f"(byte {exc.start} of the stream: {exc.reason}). "
+            "herdr panes carry text; pipe text, or encode the bytes first.")
+    except OSError as exc:
+        raise PayloadError(f"cannot read stdin: {exc}")
+    if "\x00" in text:
+        raise PayloadError(
+            "stdin contains a NUL byte, which cannot be typed into a terminal. "
+            "Strip it (tr -d '\\0') or send the data as a file instead.")
+    return text
+
+
+class PayloadError(ValueError):
+    """Bad input from the user, reportable in one line."""
 
 
 def cmd_send(args) -> int:
-    """spec 4.1/4.2 (G4, G6): stdin -> bracketed send-text; --submit -> agent prompt."""
+    """spec 4.1/4.2 (G4, G6): stdin -> the pane; --submit -> agent prompt.
+
+    Delivery rides herdr's socket (round2-04). Three consequences:
+      * the payload is no longer an argv element, so BUG-5's E2BIG is gone;
+      * framing is herdr's job, not ours, so a payload can no longer arrive as
+        literal paste-bracket escape junk in a program with no bracketed paste (BUG-8);
+      * a payload carrying \x1b[201~ is scrubbed on framed paths, so it cannot
+        break out of the bracket and be typed as input (BUG-9).
+    """
     host = getattr(args, "host", None)
-    text = sys.stdin.read()
+    raw = getattr(args, "raw", False)
+    try:
+        text = read_payload()
+    except PayloadError as exc:
+        _err(f"send: {exc}")
+        return EXIT_HERDR_ERROR
     try:
         if args.submit:
+            if raw:
+                _err("send: --raw and --submit are mutually exclusive "
+                     "(--submit hands the text to an agent, which owns its own "
+                     "delivery; --raw is about byte-level pane writes)")
+                return EXIT_USAGE
             herdrc.agent_prompt(args.pane, text, host=host)
+        elif raw:
+            # byte-transparent by contract: no framing, no sanitisation
+            herdrc.pane_send_text(args.pane, text, host=host)
         else:
-            herdrc.pane_send_text(args.pane, _frame(text), host=host)
+            clean, removed = herdrc.sanitise_framed(text)
+            if removed:
+                _err(f"send: removed {removed} bracketed-paste terminator"
+                     f"{'s' if removed > 1 else ''} from the payload; left in "
+                     f"place they would end the paste early and the rest would "
+                     f"be TYPED as input (use --raw if you meant it)")
+            herdrc.pane_send_input(args.pane, clean, host=host)
         return EXIT_OK
     except herdrc.HerdrError as exc:
         return _herdr_fail(exc)
