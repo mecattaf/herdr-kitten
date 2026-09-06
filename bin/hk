@@ -228,10 +228,17 @@ def build_parser() -> argparse.ArgumentParser:
     voice_sub = p.add_subparsers(dest="voice_verb", required=True)
     vb = voice_sub.add_parser("begin", help="recording spinner on")
     vb.add_argument("--window", required=True)
-    vb.add_argument("--spin", action="store_true", help="frame-cycling (reserved, DECISION-2)")
+    vb.add_argument("--spin", action="store_true",
+                    help="RESERVED, not implemented: says so on stderr and shows "
+                         "the static glyph (frame-cycling is DECISION-2, open)")
     vb.set_defaults(func=_cmd_voice)
     vt = voice_sub.add_parser("text", help="stdin -> focused window's herdr pane")
     vt.add_argument("--submit", action="store_true")
+    # Accepted so a daemon's naive `hk voice text <words>` reaches the exit-3
+    # fallback contract instead of an argparse usage dump; refused, never
+    # delivered, once there IS a destination. The payload is always on stdin.
+    vt.add_argument("text", nargs="*",
+                    help="refused: the dictated text is read from stdin, never argv")
     vt.set_defaults(func=_cmd_voice)
     ve = voice_sub.add_parser("end", help="recording spinner off")
     ve.add_argument("--window", required=True)
@@ -257,7 +264,7 @@ def _cmd_voice(args):
         return voice.cmd_begin(args.window, spin=args.spin)
     if args.voice_verb == "end":
         return voice.cmd_end(args.window)
-    return voice.cmd_text(submit=args.submit)
+    return voice.cmd_text(submit=args.submit, argv_text=args.text)
 
 
 def _cmd_notifyd(_args):
