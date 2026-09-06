@@ -1,0 +1,15 @@
+# Exit 1, `agent_blocked`: the same lane as worker.toml, delivered through the
+# agent prompt instead of the pane. A blocked agent REFUSES before any byte
+# moves, and hk prints herdr's code verbatim (RULING-kitten §5).
+[lane]
+name = "hk1-worker"
+kind = "supervised"
+argv = [
+  "sh",
+  "-c",
+  '''stty -echo; printf 'LANE-READY\n'; while IFS= read -r line; do printf 'READBACK<%s>\n' "$line"; done''',
+]
+direction = "down"
+
+[delivery]
+submit = true

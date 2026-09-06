@@ -1,0 +1,20 @@
+# The paste-read-back lane (herdr-kitten #37 / tally.nix #673).
+#
+# The worker echoes each line it is given back between sentinels, so the smoke
+# can extract exactly the bytes the terminal rail carried. `stty -echo` keeps
+# the pty from echoing the delivery a second time, and LANE-READY is what
+# `hk lane start` waits for before it reports 0.
+[lane]
+name = "hk1-worker"
+kind = "supervised"
+argv = [
+  "sh",
+  "-c",
+  '''stty -echo; printf 'LANE-READY\n'; while IFS= read -r line; do printf 'READBACK<%s>\n' "$line"; done''',
+]
+direction = "down"
+ready_match = "LANE-READY"
+ready_timeout_ms = 15000
+
+[delivery]
+submit = false
