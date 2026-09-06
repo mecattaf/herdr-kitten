@@ -87,9 +87,15 @@ with:
 
 Proof: [`tests/smoke/supervised-lane.sh`](tests/smoke/supervised-lane.sh) launches a
 worker argv from a preset, sends the canonical payload on stdin, reads it back through
-the terminal rail byte-identical, asserts all five exits against
-[`tests/fixtures/supervised-lane/`](tests/fixtures/supervised-lane/) — the no-session
-row first, before the smoke starts a server at all — and tears its test session down.
+the terminal rail byte-identical — **all 62 bytes of the fixture file, compared twice**:
+the bytes reconstructed from the rail with `cmp`, and the worker's own cumulative count
+and sha256 against `wc -c` / `sha256sum` of that file — asserts all five exits against
+[`tests/fixtures/supervised-lane/`](tests/fixtures/supervised-lane/), the no-session row
+first before the smoke starts a server at all, and tears its test session down. A start
+that fails part-way closes its own pane again, so a half-started lane can never leave a
+running worker nothing can address. Both properties have a rerunnable proof beside the
+other tools: [`tests/proofs/hk1-readback-bytes.py`](tests/proofs/hk1-readback-bytes.py)
+and [`tests/proofs/hk1-retry-cleanup.py`](tests/proofs/hk1-retry-cleanup.py).
 
 ## Gestures
 
@@ -187,7 +193,13 @@ kitty >= 0.47.1 · herdr >= 0.8.2 (wire protocol 21) · Python >= 3.11 · nvim (
   integration, each with its repo disposition.
 - [`docs/dev/acceptance-run.md`](docs/dev/acceptance-run.md) — the G1-G18 gate battery results.
 - [`tests/fixtures/supervised-lane/README.md`](tests/fixtures/supervised-lane/README.md) —
-  one preset per typed exit of the supervised-lane contract.
+  one preset per typed exit of the supervised-lane contract, and the byte-oriented
+  read-back worker protocol.
+- [`tests/proofs/`](tests/proofs/) — rerunnable proof harnesses: `hk1-readback-bytes.py`
+  mutates hk's delivery path four ways in a copy of the tree and requires the
+  paste-read-back gate to refuse each one; `hk1-retry-cleanup.py` drives a partial
+  `hk lane start` failure against a live server and counts the residue;
+  `pr35-proof.sh` re-runs the standing battery for the PR #35 hygiene fix.
 - [`docs/probe-report.md`](docs/probe-report.md) — the ground-truth probes this design
   was corrected against.
 - [`docs/fork-ledger.md`](docs/fork-ledger.md) / [`docs/upstream.md`](docs/upstream.md) —
