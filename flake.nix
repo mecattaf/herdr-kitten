@@ -73,7 +73,17 @@
           # sandbox HOME (kitty-attended gates run on the executor's machine,
           # never here — spec D27/G18).
           herdr-kitten-smoke = pkgs.runCommand "herdr-kitten-smoke"
-            { src = ./.; nativeBuildInputs = [ pkgs.python3 pkgs.git herdrPkg ]; } ''
+            {
+              src = ./.;
+              # kitty is here for g18-install-layout, which runs install.sh
+              # into a temp HOME and then drives the INSTALLED kitten through
+              # the real kittens.runner loader. Same rule as the build check:
+              # HK_REQUIRE_KITTY=1 turns a missing kitty into a failure rather
+              # than a SKIP, because a skipped loader gate is how BUG-1/BUG-2
+              # shipped (round2-02, RULING §3.4 item 2).
+              nativeBuildInputs = [ pkgs.python3 pkgs.git pkgs.kitty herdrPkg ];
+              HK_REQUIRE_KITTY = "1";
+            } ''
             cp -R --no-preserve=mode "$src" source
             cd source
             chmod +x bin/hk tests/smoke/*.sh install.sh
