@@ -52,7 +52,9 @@ class SocketDelivery(unittest.TestCase):
             self.addCleanup(p.stop)
 
     def send(self, text, **kw):
-        fields = {"pane": "w1:p1", "host": None, "submit": False, "raw": False}
+        # round2-05: the resolved-target grammar — `target` + `--current`.
+        fields = {"target": "w1:p1", "current": False,
+                  "host": None, "submit": False, "raw": False}
         fields.update(kw)
         args = unittest.mock.Mock(**fields)
         with unittest.mock.patch("sys.stdin", io.StringIO(text)):
@@ -138,7 +140,8 @@ class BadInputTest(SocketDelivery):
                 raise UnicodeDecodeError("utf-8", b"\xff\xfe", 0, 1, "invalid start byte")
 
         with unittest.mock.patch("sys.stdin", Undecodable()):
-            args = unittest.mock.Mock(pane="w1:p1", host=None, submit=False, raw=False)
+            args = unittest.mock.Mock(target="w1:p1", current=False,
+                                      host=None, submit=False, raw=False)
             self.assertEqual(verbs.cmd_send(args), verbs.EXIT_HERDR_ERROR)
         self.assertEqual(self.server.calls, [])
 
@@ -222,12 +225,17 @@ class ExitCodeTest(SocketDelivery):
 
     def test_herdr_error_code_propagates_verbatim(self):
         self.server.error = herdrc.HerdrError("agent is blocked", code="agent_blocked")
-        args = unittest.mock.Mock(pane="w1:p1", host=None, submit=True, raw=False)
+        args = unittest.mock.Mock(target="w1:p1", current=False,
+                                  host=None, submit=True, raw=False)
         with unittest.mock.patch("sys.stdin", io.StringIO("hi")):
             self.assertEqual(verbs.cmd_send(args), verbs.EXIT_HERDR_ERROR)
 
     def test_submit_routes_to_agent_prompt(self):
-        args = unittest.mock.Mock(pane="agentname", host=None, submit=True, raw=False)
+        # round2-05: an agent NAME here would now cost an `agent list`
+        # round trip (T14); the name-resolution path has its own cover in
+        # test_targeting.py. What this test pins is the --submit routing.
+        args = unittest.mock.Mock(target="w1:p1", current=False,
+                                  host=None, submit=True, raw=False)
         with unittest.mock.patch("sys.stdin", io.StringIO("do the thing")):
             self.assertEqual(verbs.cmd_send(args), verbs.EXIT_OK)
         self.assertEqual(self.server.methods, ["agent.prompt"])
