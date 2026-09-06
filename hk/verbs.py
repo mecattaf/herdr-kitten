@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import shlex
 import sys
 
@@ -31,6 +32,151 @@ PLUGIN_LABELS = frozenset({"reviewr"})
 
 def _err(message: str) -> None:
     print(f"hk: {message}", file=sys.stderr)
+
+
+# ------------------------------------------------------------------ targeting
+#
+# T13/T14/T15 (RULING-kitten.md §1). One grammar for every transport verb:
+# a pane id, a live agent's name, or --current.
+#
+# MEASURED live against herdr 0.8.2 (protocol 21), this lane, in a sandbox
+# server: every pane herdr manages carries
+#     HERDR_ENV=1  HERDR_PANE_ID=w1:p1  HERDR_WORKSPACE_ID=w1  HERDR_TAB_ID=w1:t1
+# in its environment. HERDR_ENV is the flag that says "herdr built this
+# environment"; HERDR_PANE_ID is the address inside it.
+
+HERDR_ENV_VAR = "HERDR_ENV"
+HERDR_PANE_ID_VAR = "HERDR_PANE_ID"
+
+# `w1:p1`, `w12:p3` — a workspace-scoped pane id, and the same shape covers a
+# tab id (`w1:t1`). Anything with a colon is a herdr id, never a name.
+PANE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$")
+# `term_65accb4eef0d01` — the attach handle.
+TERMINAL_ID_RE = re.compile(r"^term_[A-Za-z0-9_-]+$")
+# An agent label. Deliberately wider than AGENT_SLUG_RE (which governs what hk
+# will CREATE): hk must be able to address a name herdr already holds, even one
+# hk itself would have refused to mint.
+AGENT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+
+
+class TargetError(ValueError):
+    """A target that cannot be resolved, carrying the exit code it deserves.
+
+    Every instance of this is raised BEFORE any byte is written anywhere, which
+    is what lets the caller print one line and return 2 or 3 with the
+    zero-bytes-sent guarantee of the §5 contract intact.
+    """
+
+    def __init__(self, message: str, exit_code: int = EXIT_USAGE):
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
+def target_kind(target: str) -> str:
+    """`pane` | `terminal` | `agent` | `unknown` — the grammar, in one place."""
+    if not isinstance(target, str) or not target:
+        return "unknown"
+    if TERMINAL_ID_RE.match(target):
+        return "terminal"
+    if PANE_ID_RE.match(target):
+        return "pane"
+    if AGENT_NAME_RE.match(target):
+        return "agent"
+    return "unknown"
+
+
+def current_pane(env: dict | None = None, verb: str = "hk") -> str:
+    """T13 + T15: --current is HERDR_PANE_ID, and ONLY inside a managed pane.
+
+    HERDR_ENV is a precondition, not a nicety. HERDR_PANE_ID is an ordinary
+    environment variable: it is inherited by every child of a herdr pane, it
+    survives an `ssh` with SendEnv, it can be left behind in a shell rc or
+    copied into a systemd unit. Trusting it alone means `--current` will one
+    day type a payload into a pane that is not the caller's — silently, because
+    the id resolves and the delivery succeeds. HERDR_ENV is the one bit that
+    says herdr built THIS environment, so it is checked first and nothing is
+    sent when it is missing.
+    """
+    env = os.environ if env is None else env
+    if not (env.get(HERDR_ENV_VAR) or "").strip():
+        raise TargetError(
+            f"{verb}: --current needs a herdr-managed pane, and {HERDR_ENV_VAR} "
+            f"is unset, so this process is not running in one. Nothing was "
+            f"sent. Run it from a herdr pane, or name the target.",
+            EXIT_NOT_HERDR_WINDOW)
+    pane = (env.get(HERDR_PANE_ID_VAR) or "").strip()
+    if not pane:
+        raise TargetError(
+            f"{verb}: {HERDR_ENV_VAR} is set but {HERDR_PANE_ID_VAR} is not, so "
+            f"there is no pane to address. Nothing was sent. This is not an "
+            f"environment herdr built.",
+            EXIT_NOT_HERDR_WINDOW)
+    return pane
+
+
+def resolve_agent(name: str, host: str | None = None) -> str:
+    """T14: map a live agent's name to the pane it occupies.
+
+    hk owns this mapping because herdr does not. MEASURED live against 0.8.2:
+    with `agent list` reporting {"agent": "alpha", "pane_id": "w1:p1"},
+
+        herdr agent get alpha
+        -> {"error":{"code":"agent_not_found","message":"agent target alpha not found"}}
+
+    while `herdr agent get w1:p1` returns that same agent. The server's agent
+    verbs take pane/terminal ids; the label lives only in `agent list`. So the
+    lookup happens here, once, and a dead name dies typed instead of arriving
+    at the server as a mystery.
+    """
+    try:
+        agents = herdrc.call(["agent", "list"], host).get("agents") or []
+    except herdrc.HerdrError as exc:
+        raise TargetError(
+            f"cannot resolve agent name {name!r}: {exc}. Nothing was sent.",
+            EXIT_HERDR_ERROR) from exc
+    matches = [a for a in agents if a.get("agent") == name and a.get("pane_id")]
+    if not matches:
+        live = ", ".join(sorted({a["agent"] for a in agents if a.get("agent")}))
+        raise TargetError(
+            f"no live agent named {name!r} "
+            f"(live agents: {live or 'none'}). Nothing was sent.",
+            EXIT_NOT_HERDR_WINDOW)
+    panes = sorted({m["pane_id"] for m in matches})
+    if len(panes) > 1:
+        raise TargetError(
+            f"agent name {name!r} is live in more than one pane "
+            f"({', '.join(panes)}); name the pane instead. Nothing was sent.",
+            EXIT_USAGE)
+    return panes[0]
+
+
+def resolve_target(args, env: dict | None = None, verb: str = "hk") -> str:
+    """The one target resolver every transport verb calls first.
+
+    Returns a pane id the delivery tier can use directly. Raises TargetError —
+    never a traceback, never a partially-sent payload — for everything else.
+    """
+    host = getattr(args, "host", None)
+    target = getattr(args, "target", None)
+    current = bool(getattr(args, "current", False))
+    if current and target:
+        raise TargetError(
+            f"{verb}: --current and the target {target!r} are mutually "
+            f"exclusive; pass one.", EXIT_USAGE)
+    if current:
+        return current_pane(env, verb=verb)
+    if not target:
+        raise TargetError(
+            f"{verb}: needs a target — a pane id (w1:p1), a terminal id, a live "
+            f"agent name, or --current.", EXIT_USAGE)
+    kind = target_kind(target)
+    if kind == "agent":
+        return resolve_agent(target, host=host)
+    if kind == "unknown":
+        raise TargetError(
+            f"{verb}: {target!r} is not a pane id (w1:p1), a terminal id "
+            f"(term_...), or an agent name. Nothing was sent.", EXIT_USAGE)
+    return target
 
 
 def _herdr_fail(exc: herdrc.HerdrError) -> int:
@@ -232,6 +378,14 @@ def cmd_send(args) -> int:
     """
     host = getattr(args, "host", None)
     raw = getattr(args, "raw", False)
+    # Targeting comes FIRST, before stdin is even read: an unreachable target
+    # must cost zero bytes (§5 exit-code contract, exit 3), and the caller
+    # deserves the refusal before it has piped a megabyte at us.
+    try:
+        target = resolve_target(args, verb="send")
+    except TargetError as exc:
+        _err(str(exc))
+        return exc.exit_code
     try:
         text = read_payload()
     except PayloadError as exc:
@@ -244,10 +398,10 @@ def cmd_send(args) -> int:
                      "(--submit hands the text to an agent, which owns its own "
                      "delivery; --raw is about byte-level pane writes)")
                 return EXIT_USAGE
-            herdrc.agent_prompt(args.pane, text, host=host)
+            herdrc.agent_prompt(target, text, host=host)
         elif raw:
             # byte-transparent by contract: no framing, no sanitisation
-            herdrc.pane_send_text(args.pane, text, host=host)
+            herdrc.pane_send_text(target, text, host=host)
         else:
             clean, removed = herdrc.sanitise_framed(text)
             if removed:
@@ -255,7 +409,7 @@ def cmd_send(args) -> int:
                      f"{'s' if removed > 1 else ''} from the payload; left in "
                      f"place they would end the paste early and the rest would "
                      f"be TYPED as input (use --raw if you meant it)")
-            herdrc.pane_send_input(args.pane, clean, host=host)
+            herdrc.pane_send_input(target, clean, host=host)
         return EXIT_OK
     except herdrc.HerdrError as exc:
         return _herdr_fail(exc)
@@ -266,7 +420,12 @@ def cmd_read(args) -> int:
     host = getattr(args, "host", None)
     requested = args.lines
     try:
-        out = herdrc.pane_read(args.pane, lines=requested,
+        target = resolve_target(args, verb="read")
+    except TargetError as exc:
+        _err(str(exc))
+        return exc.exit_code
+    try:
+        out = herdrc.pane_read(target, lines=requested,
                                fmt="ansi" if not args.text else "text", host=host)
     except herdrc.HerdrError as exc:
         return _herdr_fail(exc)

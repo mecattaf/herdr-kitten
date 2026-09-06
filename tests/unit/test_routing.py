@@ -44,10 +44,12 @@ class ParserTest(unittest.TestCase):
         # D17 sentence that enumerates gestures.
         self.assertEqual(shipped - {"agent"}, ruled)
 
-    def test_send_routes_submit_and_pane(self):
+    def test_send_routes_submit_and_target(self):
+        # round2-05 (T14): the positional is `target`, not `pane` — a pane id is
+        # only one of the three things it accepts.
         args = self.parser.parse_args(["send", "--submit", "w1:p2"])
         self.assertTrue(args.submit)
-        self.assertEqual(args.pane, "w1:p2")
+        self.assertEqual(args.target, "w1:p2")
         self.assertEqual(args.func.__name__, "cmd_send")
 
     def test_send_defaults_to_populate_only(self):

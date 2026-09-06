@@ -19,6 +19,25 @@ from hk import VERSION  # noqa: E402
 from hk import verbs  # noqa: E402
 
 
+def _add_target(parser, what: str) -> None:
+    """T13/T14: one target grammar for every transport verb.
+
+    The argument is named `target`, never `pane`, because a pane id is only one
+    of the three things it accepts — a live agent's name and `--current` are
+    the others. `nargs="?"` is what makes `--current` usable without a
+    placeholder positional; `hk/verbs.py:resolve_target` is the half that turns
+    whichever was given into a pane id, and it refuses before any byte moves.
+    """
+    parser.add_argument("target", nargs="?", default=None,
+                        help=f"{what}: a pane id (w1:p1), a terminal id "
+                             f"(term_...), or a live agent name")
+    parser.add_argument("--current", action="store_true",
+                        help="target the pane this command is running in. "
+                             "Resolved from HERDR_PANE_ID and gated on "
+                             "HERDR_ENV — herdr sets both in every pane it "
+                             "manages, and without HERDR_ENV nothing is sent")
+
+
 def _stub(verb: str):
     def _run(_args: argparse.Namespace) -> int:
         print(f"hk {verb}: not implemented yet (lands in stages S3-S5)", file=sys.stderr)
@@ -142,18 +161,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("argv", nargs=argparse.REMAINDER)
     p.set_defaults(func=verbs.cmd_run)
 
-    p = sub.add_parser("send", help="stdin -> pane, populate-only (never submits)")
+    p = sub.add_parser("send", help="stdin -> target, populate-only (never submits)")
     p.add_argument("--submit", action="store_true", help="route through agent prompt")
     p.add_argument("--raw", action="store_true",
                    help="literal bytes, no bracketed-paste framing and no "
                         "terminator scrubbing. Byte-transparent, and sharp: a "
                         "payload can end the paste bracket and be typed as "
                         "input, newlines included.")
-    p.add_argument("pane")
+    _add_target(p, "where the payload lands")
     p.set_defaults(func=verbs.cmd_send)
 
-    p = sub.add_parser("read", help="read pane scrollback (recent-unwrapped)")
-    p.add_argument("pane")
+    p = sub.add_parser("read", help="read target scrollback (recent-unwrapped)")
+    _add_target(p, "what to read")
     p.add_argument("--lines", type=int, default=None)
     p.add_argument("--text", action="store_true", help="plain text instead of ansi")
     p.set_defaults(func=verbs.cmd_read)
