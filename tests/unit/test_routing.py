@@ -147,11 +147,26 @@ class PredicateSingleSourceTest(unittest.TestCase):
 
 
 class ConfigSurfaceTest(unittest.TestCase):
-    """spec 1.6 / F.4: exactly one config template plus one profile snippet."""
+    """spec 1.6 / F.4: exactly one config template plus one profile snippet —
+    and, since HK-1, the documented supervised-lane preset a caller copies.
+    Nothing else: an unlisted file in conf/ is drift this pin exists to catch."""
 
     def test_conf_tree_shape(self):
         names = sorted(p.name for p in (REPO / "conf").iterdir() if p.is_file())
-        self.assertEqual(names, ["config.toml", "herdr-profile.toml", "kitty-maps.conf"])
+        self.assertEqual(names, ["config.toml", "herdr-profile.toml",
+                                 "kitty-maps.conf",
+                                 # HK-1 (#36): the supervised-lane preset template.
+                                 "supervised-lane.toml"])
+
+    def test_the_lane_template_is_a_valid_preset_and_ships_documented(self):
+        """The template is the documented example, so it must load through the
+        same validator a caller's preset does — a template that hk refuses would
+        teach the wrong shape."""
+        from hk import lane
+        preset = lane.load_preset(str(REPO / "conf" / "supervised-lane.toml"))
+        self.assertEqual(preset["kind"], "supervised")
+        self.assertTrue(preset["argv"])
+        self.assertFalse(preset["submit"], "spec F.14: populate, never submit")
 
     def test_defaults_stand_alone(self):
         """spec 1.4: absent hk-config -> defaults, and nothing is written."""

@@ -1,0 +1,58 @@
+# hk supervised-lane preset — the DECLARED DATA `hk lane` reads.
+#
+# A supervising kit ships one of these and calls
+#
+#     hk lane start   ./supervised-lane.toml     # prints the pane id
+#     ... | hk lane deliver ./supervised-lane.toml
+#     hk lane status  ./supervised-lane.toml
+#     hk lane stop    ./supervised-lane.toml
+#
+# Pane selection and worker startup are terminal-rail work; the caller declares
+# WHAT to run and never learns how panes are chosen (herdr-kitten #36). The
+# payload is always on stdin, never argv, and the exits are RULING-kitten §5's:
+# 0 delivered, 1 refused (the herdr code printed verbatim: `agent_blocked`,
+# `timeout`, …), 2 preset/CLI syntax, 3 no lane reachable and ZERO BYTES sent,
+# 4 not implemented.
+#
+# Every key below is shown at its default except `name` and `argv`, which are
+# required. An unknown key is an error, not a shrug.
+
+[lane]
+# Required. How `deliver`, `status` and `stop` find this lane again: it is
+# written as the pane's `hk_lane` metadata token under source `user:hk`, and
+# also as the pane's durable label.
+name = "worker-1"
+
+# "supervised" is the only implemented kind. "unsupervised" is named, reserved
+# and answered with exit 4 forever: RULING-kitten §5 keeps unsupervised lanes
+# on systemd-run with stdin=/dev/null, and hk never appears in one.
+kind = "supervised"
+
+# Required. The worker argv, launched through the HK_EXEC trampoline so the
+# worker's exit IS the pane's exit and a finished lane reaps itself. The pane's
+# shell rc must source hk's trampoline hook for that to happen (README,
+# Install) — and `ready_match` below is how you find out when it did not.
+argv = ["bash", "-l"]
+
+# Where the pane starts. Default: the cwd of the `hk lane start` process.
+#cwd = "/srv/work"
+
+# Which way the lane pane is split off the anchor pane.
+direction = "down"
+
+# Optional bounded readiness wait. When set, `hk lane start` does not report 0
+# until the worker has printed this marker; if it never does, the pane is
+# closed again and the exit is 1 with `timeout` on stderr. Without it, start
+# never sleeps.
+#ready_match = "worker ready"
+#ready_timeout_ms = 15000
+
+[delivery]
+# false (default) = populate the pane, never submit — the standing guarantee
+# that no code path auto-submits. true routes through the agent prompt, where a
+# blocked agent refuses before any byte moves.
+submit = false
+
+# Literal bytes: no bracketed-paste framing, no terminator scrubbing.
+# Byte-transparent, and sharp. Mutually exclusive with submit.
+raw = false
