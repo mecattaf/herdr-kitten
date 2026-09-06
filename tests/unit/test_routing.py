@@ -38,7 +38,11 @@ class ParserTest(unittest.TestCase):
         """spec D17 names the verb list exactly; nothing extra, nothing missing."""
         ruled = {"open", "new", "run", "send", "read", "rename", "resume", "focus",
                  "ws", "materialise", "dematerialise", "fork", "ssh", "voice",
-                 "notifyd", "doctor", "config"}
+                 "notifyd", "doctor", "config",
+                 # HK-1 (#36/#37/#38): the supervised lane. The pin's job is to
+                 # catch a verb appearing BY ACCIDENT; a verb the card mandates
+                 # is added here by hand, which is the whole point of a pin.
+                 "lane"}
         shipped = set(self.parser._subparsers._group_actions[0].choices)
         # `agent` is the D23 CLI-only pass-through, ruled in but absent from the
         # D17 sentence that enumerates gestures.
@@ -79,6 +83,17 @@ class ParserTest(unittest.TestCase):
     def test_ws_verbs(self):
         for verb in ("list", "new", "focus", "rename"):
             self.assertEqual(self.parser.parse_args(["ws", verb]).ws_verb, verb)
+
+    def test_lane_routes_its_four_verbs_and_a_preset_path(self):
+        """HK-1: the preset is a FILE (data the caller declares), the verb is one
+        of four, and both reach `hk.lane.cmd_lane` — which owns the §5 exits."""
+        for verb in ("start", "deliver", "status", "stop"):
+            args = self.parser.parse_args(["lane", verb, "./lane.toml"])
+            self.assertEqual(args.lane_verb, verb)
+            self.assertEqual(args.preset, "./lane.toml")
+            self.assertEqual(args.func.__name__, "_cmd_lane")
+        with self.assertRaises(SystemExit):
+            self.parser.parse_args(["lane", "wait", "./lane.toml"])
 
     def test_resume_print_and_attach(self):
         self.assertTrue(self.parser.parse_args(["resume", "--print"]).print_only)
