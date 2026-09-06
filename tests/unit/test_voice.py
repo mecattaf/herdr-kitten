@@ -181,5 +181,50 @@ class ArgvIsNotAPayloadTest(unittest.TestCase):
         self.assertNotIn(" \".join(argv", src)
 
 
+class SpinIsReservedTest(unittest.TestCase):
+    """RULING-kitten §4 row #13: implement the frame-cycler or make the flag
+    announce itself. DECISION-2 is open, so it announces itself."""
+
+    def test_spin_announces_itself_and_still_shows_the_static_glyph(self):
+        calls = []
+        err = io.StringIO()
+        with patched(kittyc___run=lambda args, check=True: calls.append(args)):
+            with contextlib.redirect_stderr(err):
+                rc = voice.cmd_begin("7", spin=True)
+        self.assertEqual(rc, voice.EXIT_OK)
+        self.assertEqual(len(err.getvalue().strip().splitlines()), 1)
+        self.assertIn("reserved", err.getvalue())
+        self.assertEqual(len(calls), 1)
+        self.assertIn("set-window-logo", calls[0])
+
+    def test_without_spin_it_is_silent(self):
+        err = io.StringIO()
+        with patched(kittyc___run=lambda args, check=True: None):
+            with contextlib.redirect_stderr(err):
+                rc = voice.cmd_begin("7")
+        self.assertEqual(rc, voice.EXIT_OK)
+        self.assertEqual(err.getvalue(), "")
+
+    def test_no_frame_cycler_was_implemented(self):
+        src = (REPO / "hk" / "voice.py").read_text()
+        for forbidden in ("time.sleep", "threading", "itertools.cycle", "spinner_frames"):
+            self.assertNotIn(forbidden, src,
+                             "the frame-cycler is DECISION-2, not this unit's")
+
+    def test_the_flag_help_does_not_claim_a_feature(self):
+        import importlib.machinery
+        import importlib.util
+        spec = importlib.util.spec_from_loader(
+            "bin_hk_voice", importlib.machinery.SourceFileLoader(
+                "bin_hk_voice", str(REPO / "bin" / "hk")))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        parser = module.build_parser()
+        voice_parser = parser._subparsers._group_actions[0].choices["voice"]
+        begin = voice_parser._subparsers._group_actions[0].choices["begin"]
+        spin = [a for a in begin._actions if a.dest == "spin"][0]
+        self.assertIn("RESERVED", spin.help)
+
+
 if __name__ == "__main__":
     unittest.main()

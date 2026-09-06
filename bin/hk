@@ -209,7 +209,9 @@ def build_parser() -> argparse.ArgumentParser:
     voice_sub = p.add_subparsers(dest="voice_verb", required=True)
     vb = voice_sub.add_parser("begin", help="recording spinner on")
     vb.add_argument("--window", required=True)
-    vb.add_argument("--spin", action="store_true", help="frame-cycling (reserved, DECISION-2)")
+    vb.add_argument("--spin", action="store_true",
+                    help="RESERVED, not implemented: says so on stderr and shows "
+                         "the static glyph (frame-cycling is DECISION-2, open)")
     vb.set_defaults(func=_cmd_voice)
     vt = voice_sub.add_parser("text", help="stdin -> focused window's herdr pane")
     vt.add_argument("--submit", action="store_true")

@@ -33,8 +33,15 @@ def cmd_begin(window_id: str, spin: bool = False) -> int:
     """Spinner logo bottom-right (D8): indicate, never mutate — the window's
     content and input flow are untouched.
 
-    Static PNG; --spin reserved (DECISION-2 adopted-as-proposed).
+    `--spin` is RESERVED, not implemented. RULING-kitten §4 row #13: a silently
+    inert flag fails the bug-free bar, so the flag announces itself on stderr
+    and the static glyph is shown. The frame-cycler itself is DECISION-2, an
+    open question that is not this unit's to answer.
     """
+    if spin:
+        print("hk voice begin: --spin is reserved and not implemented "
+              "(DECISION-2 is open); showing the static mic glyph",
+              file=sys.stderr)
     try:
         kittyc._run(["set-window-logo", "--match", f"id:{window_id}",
                      "--position", "bottom-right", spinner_path()])
