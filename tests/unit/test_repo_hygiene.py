@@ -36,6 +36,10 @@ ALLOWED_EMPTY = {"tests/unit/__init__.py"}
 # that belongs under docs/dev/ (BUG-14).
 ALLOWED_ROOT = {
     "LICENSE", "README.md", "install.sh", "flake.nix", "flake.lock", ".gitignore",
+    # A deliberate reader-facing addition (2026-09-06): the dated integration
+    # log. This is the "add it here deliberately" path the note above names,
+    # not a hole — the assertion keeps its teeth for everything else.
+    "DECISIONS.md",
 }
 ALLOWED_ROOT_DIRS = {
     "assets", "bin", "conf", "contrib", "docs", "hk", "kitten", "tests", ".github",
