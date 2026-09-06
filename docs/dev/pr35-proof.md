@@ -52,15 +52,29 @@ sh tests/proofs/pr35-proof.sh              # GREEN: the fix holds        -> rc 0
 sh tests/proofs/pr35-proof.sh --red        # RED:   the gate has teeth   -> rc 0
 ```
 
-The harness copies the main checkout with `cp -a`, forces a pristine
-`round2-03-followup` inside the copy, runs the unit suite and the headless
-battery, and then asserts the copy's `git status --porcelain` is empty. It never
-writes into the source repo and never reaches the network.
+The harness copies the main checkout with `cp -a`, forces a pristine `bc0f3a3`
+inside the copy, runs the unit suite and the headless battery, and then asserts
+the copy's `git status --porcelain` is empty. It never writes into the source
+repo and never reaches the network.
+
+Two things it pins deliberately, both learned the hard way in this lane:
+
+- **It checks out a rev, not a branch name.** A branch name in a shared checkout
+  is a moving target. While this page was being written, a parallel lane
+  committed three unrelated commits straight onto `round2-03-followup`; a run
+  against the name then measured a different tree and reported a different test
+  count. `bc0f3a3` cannot drift.
+- **It deletes the copy's `.git/worktrees` first.** `cp -a` carries the source's
+  linked-worktree registrations, which still point at real directories, so the
+  copy refuses to check out any branch that is live in one of them —
+  *"already used by worktree at ..."*. Unhandled, that failure is quiet, and the
+  copy keeps the source's uncommitted tree while the run looks like it worked.
 
 ### GREEN — measured
 
 ```
-pr35-proof: mode=green branch=round2-03-followup head=bc0f3a36fae08862040a2e38a75d2c97b483df8a
+pr35-proof: mode=green ref=bc0f3a36fae08862040a2e38a75d2c97b483df8a head=bc0f3a36fae08862040a2e38a75d2c97b483df8a
+pr35-proof: head is the rev PR #35 is open at
 pr35-proof: copy is pristine before the battery
 pr35-proof: unit suite ran=118 rc=0 tail=OK
 pr35-proof: headless battery rc=0 gates_pass=12
@@ -160,8 +174,21 @@ Preconditions a reviewer can re-check first, offline, in any order:
 ```sh
 sh tests/proofs/pr35-proof.sh          # rc 0, 118 units, 12 gates, clean root
 sh tests/proofs/pr35-proof.sh --red    # rc 0, the hygiene gate bites
-git log --oneline round2-03-followup ^main   # exactly one commit: bc0f3a3
+git rev-parse origin/round2-03-followup      # want: bc0f3a3... — what #35 holds
+git log --oneline bc0f3a3 ^main              # exactly one commit
 ```
+
+**One caveat, measured, that a reviewer should see before running the merge.**
+The *local* `round2-03-followup` in `/home/tom/mecattaf/herdr-kitten` is no
+longer `bc0f3a3`: a parallel lane committed three commits onto it
+(`2662e5d`, `727966f`, `58c3a2e`, all BUG-6 / `--spin` work belonging to issue
+#23, not to #17). They are **local only** — `origin/round2-03-followup` is still
+exactly `bc0f3a3`, nothing has been pushed — so **PR #35 as GitHub holds it is
+unchanged** and the command above is still the right one. But `git push` on that
+branch from that checkout would silently widen an open PR from one hygiene
+commit to four commits spanning two issues. Those three commits want their own
+branch (`hk/round2-08-bug6-focus`) before anything is pushed. Whether to move
+them is not this unit's call.
 
 And the one check that only means something *after* the merge:
 

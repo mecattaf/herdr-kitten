@@ -18,14 +18,23 @@
 #
 #   (default)   GREEN run: the battery from a cp -a copy must be rc 0, with an
 #               empty `git status --porcelain` at the end. rc 0 = the fix holds.
+#               A detached HEAD in the copy is expected and fine.
 #   --red       RED run: plant an untracked file at the copy's repo root first.
 #               The hygiene gate MUST go red. rc 0 = the gate has teeth;
 #               rc 1 = the gate is asleep, which is the bug PR #35 fixed.
-#   --branch    which ref to check out inside the copy. Default: the branch PR
-#               #35 is open from, round2-03-followup — this harness proves that
-#               PR, so it pins that ref rather than inheriting whatever the
-#               source checkout happens to be on. Override with HK_PROOF_BRANCH
-#               or this flag (`--branch main` is the after-merge check).
+#   --branch    which ref to check out inside the copy. Default: the REV PR #35
+#               is open at, bc0f3a3 — not the branch name it is open from.
+#               Override with HK_PROOF_BRANCH or this flag (`--branch main` is
+#               the after-merge check).
+#
+# WHY A REV AND NOT `round2-03-followup`.
+# A branch name in a shared checkout is a moving target. MEASURED here: while
+# this harness was being written, a parallel lane committed three unrelated
+# commits straight onto round2-03-followup, so the name stopped meaning "what
+# PR #35 contains" and a run against it reported a different test count. The
+# rev cannot drift. `origin/round2-03-followup` is the other honest pin, and it
+# still equals bc0f3a3 — but it needs a fetch to stay true, and this harness
+# does not touch the network.
 #   --receipt   write a plain-text receipt of the run to PATH.
 #   --keep      do not delete the scratch copy (its path is printed).
 #
@@ -50,6 +59,12 @@
 # the same tree reports `Ran 118 tests ... OK`, rc 0. A proof harness that
 # cannot tell a healthy tree from a broken one is not evidence.
 #
+# WHY THE COPY'S .git/worktrees IS DROPPED.
+# A cp -a copy inherits the source's linked-worktree registrations, which point
+# at paths that still exist, so the copy refuses to check out any branch that is
+# live in one of them. Left in place that failure is silent in a `set -u` script
+# and you end up measuring the source's uncommitted tree instead of a ref.
+#
 # WHY A COPY AT ALL, on any branch.
 # On `main` the junk file is still TRACKED, and running the battery inside a
 # checkout of `main` recreates it at the repo root. Working from a copy is what
@@ -65,7 +80,9 @@ REPO=${HK_PROOF_SRC:-$(CDPATH= cd -- "$HERE" && cd -- "$(git rev-parse --git-com
 # fall back to the pinned store path, overridable so this is not nix-only.
 HERDR_BIN=${HK_PROOF_HERDR_BIN:-/nix/store/17wp72zqjv6yjrl069ssnapaqqnmmx5f-herdr-0.8.2/bin}
 
-branch=${HK_PROOF_BRANCH:-round2-03-followup}
+# The rev PR #35 is open at. A rev, not a branch name — see the header.
+PR35_REV=bc0f3a36fae08862040a2e38a75d2c97b483df8a
+branch=${HK_PROOF_BRANCH:-$PR35_REV}
 receipt=""
 mode=green
 keep=no
@@ -96,6 +113,16 @@ trap cleanup EXIT INT TERM
 # cp -a, with the trailing /. so dotfiles and .git come along. NOT git archive.
 cp -a "$REPO"/. "$d"/ || exit 2
 cd "$d" || exit 2
+# cp -a carries .git wholesale, INCLUDING .git/worktrees/<name> for every linked
+# worktree of the source. Those registrations still point at the real worktrees
+# on disk, so the copy believes those branches are checked out elsewhere and
+# refuses `git checkout <branch>` with "already used by worktree at ...".
+# MEASURED: with a linked worktree live, the checkout failed, the copy silently
+# kept the source's uncommitted tree, and the run reported a different test count
+# against a dirty root. The copy has no linked worktrees of its own, so drop the
+# registrations before touching any ref.
+rm -rf "$d/.git/worktrees"
+
 # Force the copy to a pristine $branch. -f discards any uncommitted work the
 # source happened to be carrying, -fdq removes untracked leftovers; both act on
 # the throwaway copy only.
@@ -108,7 +135,8 @@ herdr_path=$(command -v herdr)
 emit() { echo "$@"; [ -z "$receipt" ] || echo "$@" >> "$receipt"; }
 
 [ -z "$receipt" ] || : > "$receipt"
-emit "pr35-proof: mode=$mode branch=$branch head=$head"
+emit "pr35-proof: mode=$mode ref=$branch head=$head"
+[ "$head" = "$PR35_REV" ] && emit "pr35-proof: head is the rev PR #35 is open at"
 emit "pr35-proof: copy=$d (cp -a, .git carried)"
 emit "pr35-proof: herdr=$herdr_path"
 
