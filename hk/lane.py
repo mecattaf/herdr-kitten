@@ -42,6 +42,17 @@ WAITING. `hk lane start` may wait, bounded, for the worker to announce itself
 paths; a lane launch is a lifecycle path whose whole job is "the worker is up",
 and reporting 0 before the worker exists would be a lie a supervisor cannot
 recover from. The wait is opt-in — a preset with no `ready_match` never sleeps.
+
+RESIDUE. `hk lane start` either produces a lane that can be addressed, or leaves
+nothing behind. The pane is split before it can be stamped, named or waited on,
+so every step after the split sits inside one cleanup boundary: any fault closes
+the pane again and says so in the same typed line, with herdr's own code still
+leading it. A half-started lane is worse than no lane — the worker runs, no verb
+can reach it, and the next `start` (which resolves the lane by its token and
+finds none) splits a SECOND worker. For the same reason the join is READ BACK
+before start reports 0: a metadata write herdr accepted but never published is
+that same unaddressable state with no exception to catch.
+`tests/proofs/hk1-retry-cleanup.py` measures both halves against a live server.
 """
 
 from __future__ import annotations
@@ -229,9 +240,15 @@ def start(preset: dict, host: str | None = None) -> int:
     """Launch the preset's worker argv in a pane of its own.
 
     The argv rides the HK_EXEC trampoline (spec D5, gate G3), so the worker's
-    exit IS the pane's exit and a finished lane reaps itself. On a readiness
-    timeout the pane is closed again: a start that failed leaves no residue for
-    the next `hk lane start` to trip over.
+    exit IS the pane's exit and a finished lane reaps itself.
+
+    A FAILED START LEAVES NO RESIDUE, whichever step fails. The pane is split
+    first, and every step after the split sits inside one cleanup boundary
+    (`_claim` -> `_abandon`), because a half-started lane is worse than no
+    lane: the worker is running, nothing can address it, and the next
+    `hk lane start` — which resolves the lane by its token and finds none —
+    splits a SECOND worker. Cleanup is not a branch of the readiness path; it
+    is the shape of the whole launch.
     """
     name = preset["name"]
     existing = find_pane(name, host=host)
@@ -244,12 +261,70 @@ def start(preset: dict, host: str | None = None) -> int:
         pane_id=anchor, direction=preset["direction"], cwd=preset["cwd"],
         env={"HK_EXEC": verbs.encode_trampoline(preset["argv"])}, host=host)
     pane_id = pane["pane_id"]
-    herdrc.report_metadata(
-        pane_id, tokens={"hk_role": "lane", LANE_TOKEN: name}, host=host)
-    herdrc.pane_rename(pane_id, name, host=host)
-    _await_ready(preset, pane_id, host)
+    try:
+        _claim(preset, pane_id, host)
+    except Exception as exc:
+        raise _abandon_and_report(preset, pane_id, exc, host) from exc
     print(pane_id)
     return EXIT_OK
+
+
+def _claim(preset: dict, pane_id: str, host: str | None) -> None:
+    """Turn a freshly split pane INTO a lane: stamp the join, prove it landed,
+    name it, then — only if the preset asks — wait for the worker.
+
+    The token is verified by reading it back rather than assumed. A metadata
+    write herdr accepted but did not publish would leave exactly the state
+    `start` exists to prevent: a running worker no `deliver`, `status` or
+    `stop` can reach, and a retry that duplicates it. So `start` reports 0 only
+    for a lane it has just resolved by name itself.
+    """
+    name = preset["name"]
+    herdrc.report_metadata(
+        pane_id, tokens={"hk_role": "lane", LANE_TOKEN: name}, host=host)
+    resolved = find_pane(name, host=host)
+    if resolved != pane_id:
+        raise LaneError(
+            f"lane: pane {pane_id} was split for {name!r} but does not answer "
+            f"to its {LANE_TOKEN} token — that name resolves to {resolved!r}",
+            EXIT_HERDR_ERROR)
+    herdrc.pane_rename(pane_id, name, host=host)
+    _await_ready(preset, pane_id, host)
+
+
+def _abandon(pane_id: str, host: str | None) -> bool:
+    """Close a half-started lane's pane. Best effort and never raising: the
+    caller is already handling a failure, and a second failure must not mask
+    the first — but whether it worked is reported, because "hk cleaned up" is
+    a claim a supervisor should be able to check."""
+    try:
+        herdrc.pane_close(pane_id, host=host)
+        return True
+    except Exception:
+        return False
+
+
+def _abandon_and_report(preset: dict, pane_id: str, exc: Exception,
+                        host: str | None) -> Exception:
+    """Close the pane, then re-raise the SAME fault with the cleanup disclosed.
+
+    The exit code and, for a herdr fault, the machine-readable code that leads
+    the line are preserved exactly (RULING-kitten §5: the code is the half a
+    supervisor branches on), and the message stays ONE line.
+    """
+    closed = _abandon(pane_id, host)
+    note = (f"hk closed the half-started lane pane {pane_id}" if closed else
+            f"hk could NOT close the half-started lane pane {pane_id}, which "
+            f"may still be running")
+    suffix = f" ({note}; nothing was delivered)"
+    if isinstance(exc, herdrc.HerdrError):
+        return herdrc.HerdrError(f"{exc}{suffix}", code=exc.code,
+                                 stderr=exc.stderr)
+    if isinstance(exc, LaneError):
+        return LaneError(f"{exc}{suffix}", exc.exit_code)
+    return LaneError(
+        f"lane: start failed for {preset['name']!r}: "
+        f"{exc.__class__.__name__}: {exc}{suffix}", EXIT_HERDR_ERROR)
 
 
 def _await_ready(preset: dict, pane_id: str, host: str | None) -> None:
@@ -267,14 +342,11 @@ def _await_ready(preset: dict, pane_id: str, host: str | None) -> None:
         if marker in screen:
             return
         if time.monotonic() >= deadline:
-            try:
-                herdrc.pane_close(pane_id, host=host)
-            except herdrc.HerdrError:
-                pass
+            # The pane is closed by `start`'s cleanup boundary, not here: one
+            # place owns residue, so no failure path can forget it.
             raise LaneError(
-                f"timeout: lane {preset['name']!r} never printed "
-                f"{marker!r} within {preset['ready_timeout_ms']} ms; its pane "
-                f"was closed and nothing was delivered",
+                f"timeout: lane {preset['name']!r} never printed {marker!r} "
+                f"within {preset['ready_timeout_ms']} ms",
                 EXIT_HERDR_ERROR)
         time.sleep(_POLL_INTERVAL_S)
 
