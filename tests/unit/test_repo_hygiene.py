@@ -7,6 +7,19 @@ because nothing ever looked. This module is the "looking".
 
 It is deliberately cheap and git-based: it asserts properties of the tracked
 file set, so it also fails in a fresh clone on any machine.
+
+ROUND2-03 FOLLOW-UP — the file came BACK one commit later, which found both
+the real cause and a hole in this gate:
+
+  * Cause: `hk/notifyd.py` run_notify appends the notification message as a
+    final argv element, so gate G8's `notify_command = "touch $SBX/hit"`
+    executed `touch $SBX/hit "herdr: fake blocked"`, creating that second file
+    in notifyd's cwd — the repo root — on every battery run. G8 now points at
+    a wrapper script that discards "$@".
+  * Hole: every assertion here looked at TRACKED files, and the sequence that
+    reintroduced the junk was "run the battery, `git add -A`, commit" — the
+    tests ran before the add, so nothing was tracked yet and everything passed.
+    test_working_tree_root_is_clean_too closes it.
 """
 
 import subprocess
@@ -57,6 +70,29 @@ class TrackedFileHygieneTest(unittest.TestCase):
                      and (REPO / p).is_file()
                      and (REPO / p).stat().st_size == 0]
         self.assertEqual(offenders, [], f"zero-byte tracked files: {offenders}")
+
+    def test_working_tree_root_is_clean_too(self):
+        """The ordering hole that let BUG-13 come back.
+
+        The tracked-file assertions above only fire once junk is ALREADY
+        staged — but the sequence that reintroduced `herdr: fake blocked` was
+        "run the battery, then `git add -A`, then commit", and the tests ran
+        BEFORE the add. So the working tree itself has to be inspected: any
+        untracked, non-ignored entry at the repo root is litter until proven
+        otherwise.
+        """
+        offenders = []
+        for entry in sorted(REPO.iterdir()):
+            name = entry.name
+            if name == ".git" or name in ALLOWED_ROOT or name in ALLOWED_ROOT_DIRS:
+                continue
+            ignored = subprocess.run(["git", "check-ignore", "-q", name],
+                                     cwd=REPO).returncode == 0
+            if not ignored:
+                offenders.append(name)
+        self.assertEqual(offenders, [],
+                         f"untracked litter at the repo root: {offenders}. "
+                         "A test or tool wrote into the repo instead of its sandbox.")
 
     def test_repo_root_is_reader_facing(self):
         # BUG-14: DEFERRED.md / METRICS.md / acceptance-run.md read as raw agent
