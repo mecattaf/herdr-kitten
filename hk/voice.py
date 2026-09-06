@@ -31,8 +31,10 @@ def spinner_path() -> str:
 
 def cmd_begin(window_id: str, spin: bool = False) -> int:
     """Spinner logo bottom-right (D8): indicate, never mutate — the window's
-    content and input flow are untouched. Static PNG; --spin reserved
-    (DECISION-2 adopted-as-proposed: frame-cycling behind the flag)."""
+    content and input flow are untouched.
+
+    Static PNG; --spin reserved (DECISION-2 adopted-as-proposed).
+    """
     try:
         kittyc._run(["set-window-logo", "--match", f"id:{window_id}",
                      "--position", "bottom-right", spinner_path()])
@@ -51,21 +53,51 @@ def cmd_end(window_id: str) -> int:
         return EXIT_HERDR_ERROR
 
 
-def _focused_herdr_pane() -> str | None:
-    window = kittyc.focused_window()
-    if window is None or not predicate.is_herdr_client(window):
-        return None
-    return (window.get("user_vars") or {}).get("hk_pane") or None
+def _focused_herdr_pane() -> tuple[str | None, str]:
+    """(pane id, "") or (None, the one-line reason there is no destination).
 
-
-def cmd_text(submit: bool = False) -> int:
-    """spec 5.1/5.2 (G11/G12): stdin -> the focused window's herdr pane;
-    plain window -> exit 3, zero bytes sent anywhere."""
-    pane = _focused_herdr_pane()
+    Every branch here ends at exit 3 — "no herdr client focused, zero bytes
+    sent" — including the one that used to end in a traceback: a caller with
+    no `$KITTY_LISTEN_ON` (every dictation daemon, which runs outside kitty)
+    reached `kitty @` with no socket to aim at and got a raw KittyError
+    through the top of the program. A traceback is never an acceptable answer
+    to a caller contract that says "on 3, fall back and inject".
+    """
+    try:
+        window = kittyc.focused_window()
+    except kittyc.KittyError as exc:
+        return None, f"{exc} (fall back to injection)"
+    if window is None:
+        return None, "no single focused kitty window (fall back to injection)"
+    if not predicate.is_herdr_client(window):
+        return None, "focused window is not a herdr client (fall back to injection)"
+    pane = (window.get("user_vars") or {}).get("hk_pane") or None
     if pane is None:
-        print("hk voice text: focused window is not a herdr client (fall back to injection)",
-              file=sys.stderr)
+        return None, "focused herdr window projects no pane (fall back to injection)"
+    return pane, ""
+
+
+def cmd_text(submit: bool = False, argv_text: list[str] | None = None) -> int:
+    """spec 5.1/5.2 (G11/G12): stdin -> the focused window's herdr pane;
+    plain window -> exit 3, zero bytes sent anywhere.
+
+    Argument order is deliberate. The destination precondition is resolved
+    FIRST, so a caller that is not looking at a herdr client gets exit 3 —
+    the code its fallback branch is written against — whatever else its argv
+    said. Only once a real destination exists does a payload on argv become
+    reportable, and it is refused rather than delivered: the payload is always
+    on stdin, never argv (the standing rule `verbs.read_payload` carries).
+    """
+    pane, why = _focused_herdr_pane()
+    if pane is None:
+        print(f"hk voice text: {why}", file=sys.stderr)
         return EXIT_NOT_HERDR_WINDOW
+    if argv_text:
+        count = len(argv_text)
+        print(f"hk voice text: the dictated text is read from stdin, never argv "
+              f"({count} trailing word{'s' if count > 1 else ''} refused, "
+              f"nothing delivered); pipe it instead", file=sys.stderr)
+        return EXIT_USAGE
     try:
         text = verbs.read_payload()
     except verbs.PayloadError as exc:
