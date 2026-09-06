@@ -1,0 +1,75 @@
+# The paste-read-back lane (herdr-kitten #37 / tally.nix #673).
+#
+# THE WORKER IS BYTE-ORIENTED, NOT LINE-ORIENTED, AND THAT IS THE WHOLE PROOF.
+# A `while read -r line` worker cannot report a trailing fragment that has no
+# newline: `read` holds it until a delimiter or an EOF that a LIVE lane never
+# sends, so a delivery with one byte appended looked exactly like a delivery
+# without it, and the read-back "proved" byte-identity while ignoring the last
+# byte (evaluator DEFECT 1, measured: hk delivering payload + "X" still passed).
+# The tty's own line discipline does the same buffering, so the worker also
+# turns ICANON off; ECHO off keeps the rail's bytes from being printed twice.
+#
+# What it reports, per chunk, the moment the bytes arrive:
+#   LANE-READY                       the readiness marker `hk lane start` waits for
+#   READBACK-HEX <hex>               the literal bytes received, in order — the
+#                                    smoke concatenates these and compares them
+#                                    with `cmp` to the payload FILE
+#   READBACK-SHA <count> <digest>    the worker's OWN cumulative measure of
+#                                    everything it received — compared to
+#                                    `wc -c` and `sha256sum` of the same FILE,
+#                                    newline included (62 bytes, not 61)
+#   LANE-EOF <count>                 stdin closed; the pane then reaps itself
+#
+# Two independent measures of the same delivery, both against the fixture file:
+# the bytes as they came back through the rail, and the digest the worker
+# computed over what it read. Either one alone could be fooled by a smoke that
+# strips or re-frames; together they cannot.
+#
+# tests/unit/test_lane.py drives this exact script over a pipe and asserts the
+# protocol is byte-exact for a payload with a trailing byte appended, with its
+# newline removed, and arriving in two chunks; tests/proofs/hk1-readback-bytes.py
+# drives it over a real pty and then mutates hk four ways and requires the smoke
+# to go RED each time.
+[lane]
+name = "hk1-worker"
+kind = "supervised"
+argv = [
+  "python3",
+  "-u",
+  "-c",
+  '''
+import hashlib, os, sys, termios
+NL = chr(10)
+def say(tag, body):
+    sys.stdout.write(tag + " " + body + NL)
+    sys.stdout.flush()
+# A pane's stdin is always a tty, so raw mode is always applied there. The
+# fallback keeps this protocol drivable over a pipe by the unit test, where
+# there is no line discipline to turn off.
+try:
+    attrs = termios.tcgetattr(0)
+    attrs[3] = attrs[3] & ~(termios.ICANON | termios.ECHO)
+    attrs[6][termios.VMIN] = 1
+    attrs[6][termios.VTIME] = 0
+    termios.tcsetattr(0, termios.TCSANOW, attrs)
+except (termios.error, OSError, ValueError):
+    pass
+sys.stdout.write("LANE-READY" + NL)
+sys.stdout.flush()
+received = b""
+while True:
+    chunk = os.read(0, 65536)
+    if not chunk:
+        break
+    received = received + chunk
+    say("READBACK-HEX", chunk.hex())
+    say("READBACK-SHA", str(len(received)) + " " + hashlib.sha256(received).hexdigest())
+say("LANE-EOF", str(len(received)))
+''',
+]
+direction = "down"
+ready_match = "LANE-READY"
+ready_timeout_ms = 15000
+
+[delivery]
+submit = false

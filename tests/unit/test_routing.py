@@ -38,7 +38,11 @@ class ParserTest(unittest.TestCase):
         """spec D17 names the verb list exactly; nothing extra, nothing missing."""
         ruled = {"open", "new", "run", "send", "read", "rename", "resume", "focus",
                  "ws", "materialise", "dematerialise", "fork", "ssh", "voice",
-                 "notifyd", "doctor", "config"}
+                 "notifyd", "doctor", "config",
+                 # HK-1 (#36/#37/#38): the supervised lane. The pin's job is to
+                 # catch a verb appearing BY ACCIDENT; a verb the card mandates
+                 # is added here by hand, which is the whole point of a pin.
+                 "lane"}
         shipped = set(self.parser._subparsers._group_actions[0].choices)
         # `agent` is the D23 CLI-only pass-through, ruled in but absent from the
         # D17 sentence that enumerates gestures.
@@ -79,6 +83,17 @@ class ParserTest(unittest.TestCase):
     def test_ws_verbs(self):
         for verb in ("list", "new", "focus", "rename"):
             self.assertEqual(self.parser.parse_args(["ws", verb]).ws_verb, verb)
+
+    def test_lane_routes_its_four_verbs_and_a_preset_path(self):
+        """HK-1: the preset is a FILE (data the caller declares), the verb is one
+        of four, and both reach `hk.lane.cmd_lane` — which owns the §5 exits."""
+        for verb in ("start", "deliver", "status", "stop"):
+            args = self.parser.parse_args(["lane", verb, "./lane.toml"])
+            self.assertEqual(args.lane_verb, verb)
+            self.assertEqual(args.preset, "./lane.toml")
+            self.assertEqual(args.func.__name__, "_cmd_lane")
+        with self.assertRaises(SystemExit):
+            self.parser.parse_args(["lane", "wait", "./lane.toml"])
 
     def test_resume_print_and_attach(self):
         self.assertTrue(self.parser.parse_args(["resume", "--print"]).print_only)
@@ -132,11 +147,26 @@ class PredicateSingleSourceTest(unittest.TestCase):
 
 
 class ConfigSurfaceTest(unittest.TestCase):
-    """spec 1.6 / F.4: exactly one config template plus one profile snippet."""
+    """spec 1.6 / F.4: exactly one config template plus one profile snippet —
+    and, since HK-1, the documented supervised-lane preset a caller copies.
+    Nothing else: an unlisted file in conf/ is drift this pin exists to catch."""
 
     def test_conf_tree_shape(self):
         names = sorted(p.name for p in (REPO / "conf").iterdir() if p.is_file())
-        self.assertEqual(names, ["config.toml", "herdr-profile.toml", "kitty-maps.conf"])
+        self.assertEqual(names, ["config.toml", "herdr-profile.toml",
+                                 "kitty-maps.conf",
+                                 # HK-1 (#36): the supervised-lane preset template.
+                                 "supervised-lane.toml"])
+
+    def test_the_lane_template_is_a_valid_preset_and_ships_documented(self):
+        """The template is the documented example, so it must load through the
+        same validator a caller's preset does — a template that hk refuses would
+        teach the wrong shape."""
+        from hk import lane
+        preset = lane.load_preset(str(REPO / "conf" / "supervised-lane.toml"))
+        self.assertEqual(preset["kind"], "supervised")
+        self.assertTrue(preset["argv"])
+        self.assertFalse(preset["submit"], "spec F.14: populate, never submit")
 
     def test_defaults_stand_alone(self):
         """spec 1.4: absent hk-config -> defaults, and nothing is written."""

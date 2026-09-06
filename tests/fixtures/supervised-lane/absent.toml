@@ -1,0 +1,7 @@
+# Exit 3: a perfectly valid preset for a lane nobody started. Delivery must
+# refuse before stdin is read, so ZERO BYTES are sent — the safe-fallback
+# signal a supervisor branches on (RULING-kitten §5).
+[lane]
+name = "hk1-absent"
+kind = "supervised"
+argv = ["cat"]

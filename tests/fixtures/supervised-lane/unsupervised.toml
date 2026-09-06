@@ -1,0 +1,7 @@
+# Exit 4: named, reserved, not implemented. RULING-kitten §5 keeps unsupervised
+# lanes on systemd-run with stdin=/dev/null; hk never appears in one, so this
+# is a permanent 4 rather than a fault the caller can fix.
+[lane]
+name = "hk1-unsupervised"
+kind = "unsupervised"
+argv = ["cat"]

@@ -1,0 +1,5 @@
+# Exit 2: deliberately invalid TOML — the value is unquoted and the array is
+# never closed. A malformed preset launches nothing and delivers nothing.
+[lane]
+name = hk1-malformed
+argv = ["sh", "-c"

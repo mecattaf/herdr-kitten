@@ -93,3 +93,37 @@ Issues filed on mecattaf/herdr-kitten (receipts: ~/SEPT1/receipts-herdr-kitten/i
 - Index mapping issues<->ledger lines: #14 (linked from README limitations)
 - NOT externalized here by design: tally payload-hash drift (handoff file
   tally-defects.md, tally.nix's domain); spec B dotfiles consumption; campaign C scope.
+
+### HK-1 boundary (2026-09-06) — supervised lanes, and one gloss a ruling bars
+- **The card's exit-code gloss is NOT adopted.** Card `HK-1` glosses the five typed
+  exits as `0 delivered, 1 refused, 2 no session, 3 timeout, 4 malformed`. RULING-kitten
+  §5 — the captured ruling this repo's whole CLI contract already answers to, and which
+  `hk/verbs.py`'s `EXIT_*` constants encode — assigns `2` to CLI/preset syntax, `3` to
+  "no target reachable, zero bytes sent", and `4` to "not implemented". Renumbering
+  would silently change what every existing verb means to callers who already branch on
+  it, so the numbers keep their §5 meanings and `hk lane` produces all five of the
+  card's *outcomes* under them: delivered (0), refused (1, `agent_blocked`), timeout
+  (1, `timeout`), no session (1, `server_not_running` verbatim when no herdr server is
+  up at all — the answer `hk send` already gives in that state — and 3 when the server
+  is up but no lane of that name is running, which is §5's "no target reachable, zero
+  bytes sent"), malformed preset (2), not implemented (4). In every refusing case zero
+  bytes of stdin are consumed, which is the property a supervisor branches on.
+  `tests/smoke/supervised-lane.sh` asserts every one; `tests/fixtures/supervised-lane/`
+  ships one preset per row. Relitigable only by a newer ruling on §5.
+- **`kind = "unsupervised"` is answered, never implemented.** RULING-kitten §5 keeps
+  tally's unsupervised lanes on `systemd-run` with `stdin=/dev/null` and says hk never
+  appears in one. A preset declaring it gets exit 4 and a line saying why it is
+  permanent, rather than a lane hk should not have.
+- **`hk lane` grows no `wait`/`wait-output` verb — and hk still has neither.**
+  RULING-kitten §5 lists `hk wait-output <target> --match/--regex [--timeout MS]` and
+  `hk wait <agent> [--until S] [--timeout MS]` in the CLI contract tally may rely on;
+  MEASURED 2026-09-06: `bin/hk` builds no such parser, so both are still unbuilt repo-wide
+  and neither is this unit's to build. `hk lane` does not smuggle them in: the bounded
+  readiness wait inside `hk lane start` (`ready_match`/`ready_timeout_ms`, opt-in, one
+  0.1 s interval that a preset cannot tune) is a lifecycle precondition — the worker is
+  up before delivery is possible — not a general waiting surface, and spec F.6's
+  no-polling rule governs interactive paths. Filing the two §5 wait verbs is a separate
+  unit's.
+- **`tests/smoke/supervised-lane.sh` is not in `run-headless.sh`.** It is its own oracle
+  entry for card HK-1 and runs alongside the repository battery. Folding it in is a
+  later editorial call, not a silent one.

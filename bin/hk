@@ -171,6 +171,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_target(p, "where the payload lands")
     p.set_defaults(func=verbs.cmd_send)
 
+    p = sub.add_parser("lane", help="supervised lane from a preset file "
+                                    "(start|deliver|status|stop)")
+    p.add_argument("lane_verb", choices=["start", "deliver", "status", "stop"],
+                   help="start: launch the preset's worker argv in a pane of "
+                        "its own. deliver: payload on stdin -> that pane. "
+                        "status: print its pane id. stop: tear it down")
+    p.add_argument("preset", help="path to the supervised-lane preset (TOML)")
+    p.set_defaults(func=_cmd_lane)
+
     p = sub.add_parser("read", help="read target scrollback (recent-unwrapped)")
     _add_target(p, "what to read")
     p.add_argument("--lines", type=int, default=None)
@@ -256,6 +265,11 @@ def build_parser() -> argparse.ArgumentParser:
 def _cmd_ssh(args):
     from hk import remote
     return remote.cmd_ssh(args.sshhost, plain=args.plain, in_place=args.in_place)
+
+
+def _cmd_lane(args):
+    from hk import lane
+    return lane.cmd_lane(args)
 
 
 def _cmd_voice(args):

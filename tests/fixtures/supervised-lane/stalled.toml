@@ -1,0 +1,10 @@
+# Exit 1, `timeout`: the worker starts and runs, but never announces the marker
+# the preset declares. `hk lane start` must not report 0 for a lane that is not
+# up — it closes the pane again and says timeout in one line.
+[lane]
+name = "hk1-stalled"
+kind = "supervised"
+argv = ["cat"]
+direction = "down"
+ready_match = "MARKER-THAT-NEVER-APPEARS"
+ready_timeout_ms = 800
