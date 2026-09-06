@@ -21,10 +21,32 @@ if pane == nil or pane == "" then
   return -- not a fork window; nothing to do (spec 11.8)
 end
 
+-- Locating fork_state.py (BUG-4). The candidates below are the two trees that
+-- actually exist, plus the flat one for safety; before round2-02 neither
+-- candidate matched an installed tree, so an installed fork window found no
+-- helper and delivered nothing, silently.
+--
+--   installed  HK_FORK_ASSETS=<kitty config>/hk/assets -> ../fork_state.py
+--   dev / nix  HK_FORK_ASSETS=<repo>/assets            -> ../kitten/fork_state.py
+--
+-- tests/smoke/g18-install-layout.sh reads these very lines out of this file and
+-- asserts one of them resolves against a freshly installed tree.
 local assets = os.getenv("HK_FORK_ASSETS") or ""
-local helper = assets .. "/../kitten/fork_state.py"
-if vim.fn.filereadable(helper) == 0 then
-  helper = assets .. "/fork_state.py" -- installed layout: beside the assets
+local helper = nil
+for _, cand in ipairs({
+  assets .. "/../fork_state.py",
+  assets .. "/../kitten/fork_state.py",
+  assets .. "/fork_state.py",
+}) do
+  if vim.fn.filereadable(cand) == 1 then
+    helper = cand
+    break
+  end
+end
+if helper == nil then
+  vim.notify("hk fork: fork_state.py not found under " .. assets ..
+    "/.. — reinstall with install.sh", vim.log.levels.ERROR)
+  return
 end
 local state = vim.fn.tempname() .. ".hk-fork-state"
 local submit = os.getenv("HK_FORK_SUBMIT") == "1"

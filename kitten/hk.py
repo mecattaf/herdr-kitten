@@ -176,6 +176,31 @@ def _assets_dir() -> str:
     return os.path.join(_HERE, "assets")
 
 
+def _hk_bin() -> str:
+    """Absolute path to the `hk` CLI, resolved without trusting PATH.
+
+    BUG-4, second half: a kitty window launched from a GUI session inherits the
+    session's PATH, and ~/.local/bin is very often not on it — so a fork window
+    that shells out to a bare `hk` silently delivers nothing. The candidates
+    mirror the two trees the installer and the nix package build:
+
+      <kitten dir>/../bin/hk   dev tree (<repo>/bin/hk) and the nix share tree
+      $XDG_DATA_HOME/hk/bin/hk install.sh's copy (the symlink's real target)
+      ~/.local/bin/hk          the symlink install.sh drops on PATH
+
+    PATH is consulted last, and a bare "hk" is the final fallback so behaviour
+    never gets worse than it was.
+    """
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    for cand in (os.path.join(os.path.dirname(_HERE), "bin", "hk"),
+                 os.path.join(data_home, "hk", "bin", "hk"),
+                 os.path.expanduser("~/.local/bin/hk")):
+        if os.access(cand, os.X_OK):
+            return cand
+    import shutil
+    return shutil.which("hk") or "hk"
+
+
 def _toggle(boss, window) -> None:
     action = ladder.toggle_action(_window_dict(window))
     if action == ladder.PREFIX:
@@ -212,6 +237,7 @@ def _fork(boss, window) -> None:
         "--var", "hk_role=fork",
         "--env", f"HK_FORK_PANE={pane}",
         "--env", f"HK_FORK_ASSETS={assets}",
+        "--env", f"HK_BIN={_hk_bin()}",
         "nvim", "--cmd", f"luafile {fork_lua}"))
 
 
