@@ -7,9 +7,9 @@ in-process launches only — ZERO sockets, ZERO subprocess waits, ZERO polling
 unit-tested); this file only touches kitty.
 
 Invoke from kitty maps (see conf/kitty-maps.conf):
-    map ctrl+b            kitten hk-kitten/hk.py toggle
-    map ctrl+shift+g      kitten hk-kitten/hk.py fork
-    map ctrl+shift+h      kitten hk-kitten/hk.py scrollback
+    map ctrl+b            kitten hk/hk.py toggle
+    map ctrl+shift+g      kitten hk/hk.py fork
+    map ctrl+shift+h      kitten hk/hk.py scrollback
 
 LOADER CONTRACT (round2-01, receipts against kitty 0.48.0):
 
@@ -54,7 +54,7 @@ def _kitten_dir() -> str:
             return os.path.realpath(cand)
     config_dir = os.environ.get("KITTY_CONFIG_DIRECTORY")
     if config_dir:
-        for cand in (os.path.join(config_dir, "hk-kitten"), config_dir):
+        for cand in (os.path.join(config_dir, "hk"), config_dir):
             if os.path.isfile(os.path.join(cand, "hk.py")):
                 return os.path.realpath(cand)
     # Last resort: sys.path[0] verbatim. Better a wrong directory than a
@@ -125,24 +125,80 @@ def _window_dict(window) -> dict:
     return {"user_vars": user_vars, "foreground_processes": fg}
 
 
+def _load_by_path(basename: str, module_name: str):
+    """Load one of the CLI package's pure modules as a FILE, never by name.
+
+    `from hk import config` cannot be used here (BUG-3): kitty puts the
+    kitten's own directory on sys.path, and in an installed tree that
+    directory IS named `hk`, so the name resolves to this very kitten file
+    rather than to the CLI package. ladder.py loads predicate.py the same way
+    and for the same reason. Candidates, in order:
+
+      1. a vendored copy beside this file (installed tree — install.sh puts
+         predicate.py and config.py there),
+      2. <repo>/hk/<basename> (the dev tree and the nix share tree).
+    """
+    import importlib.util
+
+    for path in (os.path.join(_HERE, basename),
+                 os.path.join(os.path.dirname(_HERE), "hk", basename)):
+        if not os.path.isfile(path):
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault(module_name, module)
+        spec.loader.exec_module(module)
+        return module
+    return None
+
+
 def _config():
     # tiny cached toml read; file I/O only on first gesture use
     if not hasattr(_config, "_cached"):
+        _config._cached = {"plain_scrollback_action": "show_scrollback"}
         try:
-            from hk import config as hk_config
-            _config._cached = hk_config.load()
+            hk_config = _load_by_path("config.py", "_hk_config")
+            if hk_config is not None:
+                _config._cached = hk_config.load()
         except Exception:
-            _config._cached = {"plain_scrollback_action": "show_scrollback"}
+            pass
     return _config._cached
 
 
 def _assets_dir() -> str:
-    # dev tree: <repo>/assets ; installed: <kitten dir>/hk-assets
-    for cand in (os.path.join(os.path.dirname(_HERE), "assets"),
-                 os.path.join(_HERE, "hk-assets")):
+    # installed: <kitten dir>/assets ; dev tree: <repo>/assets
+    for cand in (os.path.join(_HERE, "assets"),
+                 os.path.join(os.path.dirname(_HERE), "assets")):
         if os.path.isdir(cand):
             return cand
-    return os.path.join(_HERE, "hk-assets")
+    return os.path.join(_HERE, "assets")
+
+
+def _hk_bin() -> str:
+    """Absolute path to the `hk` CLI, resolved without trusting PATH.
+
+    BUG-4, second half: a kitty window launched from a GUI session inherits the
+    session's PATH, and ~/.local/bin is very often not on it — so a fork window
+    that shells out to a bare `hk` silently delivers nothing. The candidates
+    mirror the two trees the installer and the nix package build:
+
+      <kitten dir>/../bin/hk   dev tree (<repo>/bin/hk) and the nix share tree
+      $XDG_DATA_HOME/hk/bin/hk install.sh's copy (the symlink's real target)
+      ~/.local/bin/hk          the symlink install.sh drops on PATH
+
+    PATH is consulted last, and a bare "hk" is the final fallback so behaviour
+    never gets worse than it was.
+    """
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    for cand in (os.path.join(os.path.dirname(_HERE), "bin", "hk"),
+                 os.path.join(data_home, "hk", "bin", "hk"),
+                 os.path.expanduser("~/.local/bin/hk")):
+        if os.access(cand, os.X_OK):
+            return cand
+    import shutil
+    return shutil.which("hk") or "hk"
 
 
 def _toggle(boss, window) -> None:
@@ -181,6 +237,7 @@ def _fork(boss, window) -> None:
         "--var", "hk_role=fork",
         "--env", f"HK_FORK_PANE={pane}",
         "--env", f"HK_FORK_ASSETS={assets}",
+        "--env", f"HK_BIN={_hk_bin()}",
         "nvim", "--cmd", f"luafile {fork_lua}"))
 
 
@@ -233,7 +290,7 @@ def handle_result(args: list[str], answer: str, target_window_id: int, boss) -> 
             boss, "herdr-kitten: unknown gesture",
             f"{gesture!r} is not a herdr-kitten gesture. "
             f"Expected one of: {', '.join(GESTURES)}. "
-            "Check the `kitten hk-kitten/hk.py <gesture>` line in your kitty.conf.")
+            "Check the `kitten hk/hk.py <gesture>` line in your kitty.conf.")
         return
     window = boss.window_id_map.get(target_window_id)
     if window is None:
