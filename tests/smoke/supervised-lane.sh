@@ -9,8 +9,12 @@
 #      pane hk selects (#36). The caller declares what to run; it never learns
 #      how panes are chosen, and nothing about the worker is compiled into hk.
 #   2. The canonical payload, sent ON STDIN, comes back through the terminal
-#      rail BYTE-IDENTICAL (#37). The worker echoes each line between
-#      sentinels, so the smoke reads back exactly the bytes the rail carried.
+#      rail BYTE-IDENTICAL (#37) — all 62 bytes of it, the trailing newline
+#      included. The worker reports two independent measures of what it
+#      received (the literal bytes in hex, and its own cumulative count and
+#      sha256) and the smoke compares BOTH to the payload file: `cmp` on the
+#      reconstruction, and the worker's `READBACK-SHA <count> <digest>` against
+#      `wc -c` / `sha256sum` of the same file.
 #   3. Every typed exit of the RULING-kitten §5 contract is produced by the
 #      fixture and asserted here (#38): 0 delivered, 1 refused (`agent_blocked`,
 #      `timeout` and `server_not_running`, each printed verbatim), 2 malformed
@@ -18,11 +22,20 @@
 #   4. The test session is torn down by a verb (`hk lane stop`), not a trap,
 #      and the pane count returns to its baseline.
 #
-# THE READ-BACK IS ASSERTED FROM BOTH SIDES, on purpose. `want` is read from
-# the payload fixture, so a byte dropped anywhere in hk's delivery or in the
-# rail makes `got != want`; and the fixture's own sha256 is PINNED below, so a
-# byte dropped from the fixture itself — which would otherwise move both sides
-# together and stay green — fails the digest. Either mutation is RED.
+# THE READ-BACK IS ASSERTED FROM BOTH SIDES, on purpose. The worker's measures
+# come from the bytes it actually read, so a byte appended, dropped or altered
+# anywhere in hk's delivery or in the rail makes them disagree with the payload
+# FILE; and the fixture's own sha256 is PINNED below, so a byte dropped from the
+# fixture itself — which would otherwise move both sides together and stay green
+# — fails the digest. Every one of those mutations was applied and observed RED
+# (tests/proofs/hk1-readback-bytes.py reruns two of them).
+#
+# The worker must therefore be BYTE-oriented: a `while read -r line` worker
+# never reports a trailing fragment with no newline after it, because `read`
+# holds that fragment until a delimiter or an EOF a live lane never sends — so
+# the extra byte the evaluator appended was invisible and the gate passed on a
+# delivery that was not byte-identical (DEFECT 1). The fixture worker puts the
+# tty in raw mode and reports every chunk the moment it arrives.
 #
 # `pane report-agent` is a smoke FIXTURE here, exactly as in G6: tests are the
 # sole legal caller outside real agents and their installers (spec F.9).
@@ -129,21 +142,27 @@ lane_run status "$P/worker.toml"
   || gate_fail $G "status resolved '$(cat "$SBX/lane.out")', start reported '$pane'"
 
 # --- 6. #37: payload on stdin, read back through the rail BYTE-IDENTICAL ------
+# Byte-identical means ALL of the bytes: both comparisons are against the
+# payload FILE — 62 bytes, trailing newline included — and never against a
+# stripped copy of it. DEFECT 1 was exactly that strip plus a last-sentinel-only
+# read, which together made a delivery with one extra trailing byte
+# indistinguishable from the canonical one.
+want_bytes=$(wc -c < "$PAYLOAD" | tr -d ' ')
+want_sha=$(sha256_of "$PAYLOAD")
 lane_run deliver "$P/worker.toml" "$PAYLOAD"
 [ "$LANE_RC" -eq 0 ] || gate_fail $G "hk lane deliver exited $LANE_RC (stderr: $(cat "$SBX/lane.err"))"
-hk_wait "hk read $pane --text --lines 200 | grep -q 'READBACK<'" 75 \
-  || gate_fail $G "the payload never came back through the rail: $(hk_pane_visible "$pane")"
-hk read "$pane" --text --lines 200 2>/dev/null | python3 -c "
+# (a) the worker's OWN cumulative measure of everything it received
+hk_wait "hk read $pane --text --lines 400 | grep -q 'READBACK-SHA $want_bytes $want_sha'" 75 \
+  || gate_fail $G "the worker never reported the whole payload byte-for-byte: want 'READBACK-SHA $want_bytes $want_sha', screen: $(hk_pane_visible "$pane")"
+# (b) the literal bytes, reconstructed from the rail and compared with cmp
+hk read "$pane" --text --lines 400 2>/dev/null | python3 -c "
 import re, sys
-found = re.findall(r'READBACK<(.*?)>', sys.stdin.read())
-sys.stdout.write(found[-1] if found else '')" > "$SBX/readback.txt"
-python3 -c "
-import sys
-sys.stdout.write(open(sys.argv[1], 'rb').read().decode().rstrip('\n'))" "$PAYLOAD" > "$SBX/want.txt"
-got_sha=$(sha256_of "$SBX/readback.txt")
-want_sha=$(sha256_of "$SBX/want.txt")
-[ "$got_sha" = "$want_sha" ] || gate_fail $G "read-back is NOT byte-identical: got $(wc -c < "$SBX/readback.txt" | tr -d ' ') bytes \
-[$(cat "$SBX/readback.txt")] sha $got_sha, want $(wc -c < "$SBX/want.txt" | tr -d ' ') bytes [$(cat "$SBX/want.txt")] sha $want_sha"
+chunks = re.findall(r'READBACK-HEX ([0-9a-f]+)', sys.stdin.read())
+sys.stdout.buffer.write(bytes.fromhex(''.join(chunks)))" > "$SBX/readback.bin"
+cmp "$SBX/readback.bin" "$PAYLOAD" \
+  || gate_fail $G "read-back is NOT byte-identical: got $(wc -c < "$SBX/readback.bin" | tr -d ' ') bytes \
+[$(cat -v "$SBX/readback.bin")] sha $(sha256_of "$SBX/readback.bin"), want $want_bytes bytes \
+[$(cat -v "$PAYLOAD")] sha $want_sha"
 
 # --- 7. exit 1: a blocked agent REFUSES, and the code is propagated verbatim --
 herdr pane report-agent "$pane" --source test:smoke --agent hk1-worker --state blocked >/dev/null
@@ -169,7 +188,7 @@ lane_run status "$P/worker.toml"
 [ "$LANE_RC" -eq 3 ] || gate_fail $G "status on a stopped lane exited $LANE_RC, want 3"
 
 gate_pass $G "worker argv launched from $P/worker.toml into pane $pane; \
-$(wc -c < "$SBX/want.txt" | tr -d ' ') payload bytes on stdin read back byte-identical (sha $want_sha); \
+all $want_bytes payload bytes on stdin read back byte-identical (cmp against the fixture file, and the worker's own READBACK-SHA $want_bytes $want_sha); \
 exits 0/1/2/3/4 asserted (delivered; refused as agent_blocked, timeout and server_not_running; \
 malformed preset; no lane reachable with zero bytes read; not implemented); \
 lane stopped, pane count back to $baseline"

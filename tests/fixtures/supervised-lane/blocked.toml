@@ -1,14 +1,17 @@
-# Exit 1, `agent_blocked`: the same lane as worker.toml, delivered through the
-# agent prompt instead of the pane. A blocked agent REFUSES before any byte
-# moves, and hk prints herdr's code verbatim (RULING-kitten §5).
+# Exit 1, `agent_blocked`: a delivery to the SAME lane worker.toml started, but
+# routed through the agent prompt instead of the pane. A blocked agent REFUSES
+# before any byte moves, and hk prints herdr's code verbatim (RULING-kitten §5).
+#
+# `name` is the load-bearing key here and it must match worker.toml's: this
+# preset is never `start`ed (the smoke drives `deliver` only), so what it
+# declares is WHICH RUNNING LANE the delivery is aimed at. `argv` is therefore
+# inert — the same placeholder absent.toml and stalled.toml carry — and a
+# `hk lane start` of this file would be refused anyway, because a lane of that
+# name is already running. tests/unit/test_lane.py pins both facts.
 [lane]
 name = "hk1-worker"
 kind = "supervised"
-argv = [
-  "sh",
-  "-c",
-  '''stty -echo; printf 'LANE-READY\n'; while IFS= read -r line; do printf 'READBACK<%s>\n' "$line"; done''',
-]
+argv = ["cat"]
 direction = "down"
 
 [delivery]
